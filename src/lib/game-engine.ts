@@ -107,8 +107,8 @@ export function computeRoundResult(params: {
 }
 
 // Accumulates per-player knowledge from reveal data + their final guesses.
-// knownPositions is seeded from the revealed position hint, then each final
-// guess fills any position where the guessed letter matches exactly.
+// knownPositions is seeded from the revealed position hint, then each correct
+// final guess fills all 7 slots.
 export function derivePlayerKnowledge(
   answer: string,
   revealData: RevealData,
@@ -124,12 +124,11 @@ export function derivePlayerKnowledge(
   const presentSet = new Set<string>(revealData.presentLetters);
   const eliminatedSet = new Set<string>(revealData.eliminatedLetters);
 
-  // Each final guess: fill any position where the letter matches exactly,
-  // and update the letter bank for all guessed letters.
+  // Each final guess: correct guess fills all positions; every guess updates letter knowledge
   for (const guess of finalGuesses) {
     const g = guess.toUpperCase();
-    for (let i = 0; i < 7; i++) {
-      if (g[i] === secret[i]) knownPositions[i] = secret[i];
+    if (g === secret) {
+      for (let i = 0; i < 7; i++) knownPositions[i] = secret[i];
     }
     // Classify letters from this final guess against the answer
     for (const ch of g.split('')) {
