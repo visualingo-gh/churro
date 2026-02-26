@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createRoom, addMemberToRoom, lockRoom, getUserById } from '@/lib/db';
+import { createRoom, addMemberToRoom, getUserById } from '@/lib/db';
 import { getAppMode, getTodayStringLA } from '@/lib/app-mode';
 
 function generateInviteCode(): string {
@@ -11,15 +11,10 @@ function generateInviteCode(): string {
 
 export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({}));
-  const { userId, maxPlayers } = body ?? {};
+  const { userId } = body ?? {};
 
   if (!userId) {
     return NextResponse.json({ error: 'userId is required' }, { status: 400 });
-  }
-
-  const parsed = parseInt(maxPlayers, 10);
-  if (isNaN(parsed) || parsed < 2 || parsed > 4) {
-    return NextResponse.json({ error: 'maxPlayers must be 2, 3, or 4' }, { status: 400 });
   }
 
   const user = await getUserById(userId);
@@ -30,7 +25,7 @@ export async function POST(req: NextRequest) {
   try {
     const room = await createRoom({
       inviteCode: generateInviteCode(),
-      maxPlayers: parsed,
+      maxPlayers: 4,
       gameDate: getAppMode() === 'daily' ? getTodayStringLA() : '1',
     });
 
@@ -39,9 +34,6 @@ export async function POST(req: NextRequest) {
       userId: user.id,
       displayName: user.display_name,
     });
-
-    // If max_players is 1... shouldn't happen (min 2), but guard anyway
-    if (parsed === 1) await lockRoom(room.id);
 
     return NextResponse.json({ room, member });
   } catch {

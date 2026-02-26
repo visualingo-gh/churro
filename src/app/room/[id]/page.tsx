@@ -45,6 +45,9 @@ export default function RoomPage() {
 
   const [readying, setReadying] = useState(false);
 
+  const [beginConfirm, setBeginConfirm] = useState(false);
+  const [beginning, setBeginning] = useState(false);
+
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const revealFetchedForDate = useRef<string | null>(null);
 
@@ -78,7 +81,7 @@ export default function RoomPage() {
 
       if (data.knowledge) setPlayerKnowledge(data.knowledge);
 
-      // If game_date changed (new day), reset reveal + knowledge
+      // If game_date changed (new day/round), reset reveal + knowledge
       if (revealFetchedForDate.current && revealFetchedForDate.current !== data.room.game_date) {
         revealFetchedForDate.current = null;
         setRevealData(null);
@@ -106,7 +109,7 @@ export default function RoomPage() {
 
   async function joinRoom() {
     const uid = localStorage.getItem('churro_user_id');
-    if (!uid) { router.push('/'); return; } // need to set display name first
+    if (!uid) { router.push('/'); return; }
     setJoining(true);
     setJoinError(null);
     try {
@@ -122,6 +125,24 @@ export default function RoomPage() {
       setJoinError((e as Error).message);
     } finally {
       setJoining(false);
+    }
+  }
+
+  async function beginGame() {
+    if (!userId || beginning) return;
+    setBeginning(true);
+    try {
+      const res = await fetch(`/api/rooms/${id}/begin`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setBeginConfirm(false);
+      await fetchRoomState();
+    } catch { } finally {
+      setBeginning(false);
     }
   }
 
@@ -194,14 +215,48 @@ export default function RoomPage() {
   return (
     <main className="min-h-screen p-8 max-w-md mx-auto font-sans">
 
+      {/* Begin game confirmation modal */}
+      {beginConfirm && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white p-6 max-w-sm w-full">
+            <p className="font-medium mb-1">
+              Start game with {members.length} player{members.length !== 1 ? 's' : ''}?
+            </p>
+            <p className="text-sm text-gray-500 mb-5">
+              Roster will be locked for this room.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={beginGame}
+                disabled={beginning}
+                className="px-5 py-2 bg-black text-white text-sm font-medium disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-black"
+              >
+                {beginning ? '…' : 'Start'}
+              </button>
+              <button
+                onClick={() => setBeginConfirm(false)}
+                className="px-5 py-2 border border-gray-300 text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-gray-400"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex justify-between items-start mb-8">
         <div>
-          <button onClick={() => router.push('/')} className="text-xs text-gray-400 mb-1 hover:text-gray-600">← Dashboard</button>
+          <button
+            onClick={() => router.push('/')}
+            className="text-xs text-gray-400 mb-1 hover:text-gray-600 focus-visible:ring-2 focus-visible:ring-offset-1 focus-visible:ring-gray-400"
+          >
+            ← Dashboard
+          </button>
           <h1 className="text-xl font-bold">{getRoomLabel(members, userId ?? '')}</h1>
         </div>
         <div className="text-right text-xs text-gray-500 space-y-0.5">
-          <p className="capitalize">Phase: <strong>{room.phase}</strong></p>
+          <p className="capitalize">Phase: <strong>{room.is_locked ? room.phase : 'lobby'}</strong></p>
           <p>Streak: <strong>{room.streak_count}</strong></p>
           <p>{room.game_date}</p>
         </div>
@@ -209,19 +264,15 @@ export default function RoomPage() {
 
       {/* Members */}
       <div className="mb-6">
-        <p className="text-xs font-medium text-gray-500 mb-1">PLAYERS ({members.length}/{room.max_players})</p>
+        <p className="text-xs font-medium text-gray-500 mb-1">PLAYERS ({members.length})</p>
         <div className="flex flex-col gap-0.5">
           {members.map(m => (
             <p key={m.user_id} className="text-sm">
               {m.display_name}{m.user_id === userId ? ' (you)' : ''}
             </p>
           ))}
-          {!room.is_locked && members.length < room.max_players && room.phase === 'contribution' && (
-            <p className="text-sm text-gray-400">
-              {members.length < 2
-                ? `Need ${2 - members.length} more to start`
-                : `Up to ${room.max_players - members.length} more can join`}
-            </p>
+          {!room.is_locked && room.phase === 'contribution' && members.length < 4 && (
+            <p className="text-sm text-gray-400">Waiting for others to join…</p>
           )}
         </div>
       </div>
@@ -230,7 +281,10 @@ export default function RoomPage() {
       {!isInRoom && !userId && (
         <div className="mb-6 border border-gray-200 p-4">
           <p className="text-sm text-gray-600 mb-2">Set a display name before joining.</p>
-          <button onClick={() => router.push('/')} className="px-4 py-2 bg-black text-white text-sm">
+          <button
+            onClick={() => router.push('/')}
+            className="px-4 py-2 bg-black text-white text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-black"
+          >
             Go to Dashboard
           </button>
         </div>
@@ -242,7 +296,7 @@ export default function RoomPage() {
           <button
             onClick={joinRoom}
             disabled={joining}
-            className="px-4 py-2 bg-black text-white text-sm disabled:opacity-50"
+            className="px-4 py-2 bg-black text-white text-sm disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-black"
           >
             {joining ? '…' : 'Join'}
           </button>
@@ -260,37 +314,54 @@ export default function RoomPage() {
           {/* ── CONTRIBUTION ── */}
           {room.phase === 'contribution' && (
             <div className="mb-6">
-              <p className="text-xs font-medium text-gray-500 mb-1">PHASE 1 — CONTRIBUTION</p>
-              <p className="text-sm text-gray-600 mb-4">{contributionCount} of {members.length} locked in</p>
-
-              {members.length < 2 ? (
-                <p className="text-sm text-gray-400">Waiting for more players to join…</p>
-              ) : myContribution ? (
-                <p className="text-sm text-green-700">Your guess is locked in. Waiting for others…</p>
-              ) : (
-                <>
-                  <p className="text-xs text-gray-400 mb-3">
-                    Submit one 7-letter word. No feedback until all players submit.
+              {!room.is_locked ? (
+                /* ── LOBBY (pre-game) ── */
+                <div className="space-y-4">
+                  <p className="text-xs font-medium text-gray-500">LOBBY</p>
+                  <p className="text-sm text-gray-500">
+                    Share the invite link below. Click Begin when everyone is here.
                   </p>
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      placeholder="XXXXXXX"
-                      value={guessInput}
-                      onChange={e => setGuessInput(e.target.value.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 7))}
-                      onKeyDown={e => e.key === 'Enter' && submitGuess()}
-                      maxLength={7}
-                      className="border border-gray-300 px-3 py-2 text-sm font-mono flex-1 uppercase"
-                    />
-                    <button
-                      onClick={submitGuess}
-                      disabled={submitting || !inputIsValid}
-                      className="px-4 py-2 bg-black text-white text-sm disabled:opacity-50"
-                    >
-                      {submitting ? '…' : 'Lock In'}
-                    </button>
-                  </div>
-                  {submitError && <p className="text-red-500 text-xs mt-2">{submitError}</p>}
+                  <button
+                    onClick={() => setBeginConfirm(true)}
+                    className="px-5 py-2 bg-black text-white text-sm font-medium focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-black"
+                  >
+                    Begin Game
+                  </button>
+                </div>
+              ) : (
+                /* ── CONTRIBUTION (post-lock) ── */
+                <>
+                  <p className="text-xs font-medium text-gray-500 mb-1">PHASE 1 — CONTRIBUTION</p>
+                  <p className="text-sm text-gray-600 mb-4">{contributionCount} of {members.length} locked in</p>
+
+                  {myContribution ? (
+                    <p className="text-sm text-green-700">Your guess is locked in. Waiting for others…</p>
+                  ) : (
+                    <>
+                      <p className="text-xs text-gray-400 mb-3">
+                        Submit one 7-letter word. No feedback until all players submit.
+                      </p>
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          placeholder="XXXXXXX"
+                          value={guessInput}
+                          onChange={e => setGuessInput(e.target.value.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 7))}
+                          onKeyDown={e => e.key === 'Enter' && submitGuess()}
+                          maxLength={7}
+                          className="border border-gray-300 px-3 py-2 text-sm font-mono flex-1 uppercase focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black"
+                        />
+                        <button
+                          onClick={submitGuess}
+                          disabled={submitting || !inputIsValid}
+                          className="px-4 py-2 bg-black text-white text-sm disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-black"
+                        >
+                          {submitting ? '…' : 'Lock In'}
+                        </button>
+                      </div>
+                      {submitError && <p className="text-red-500 text-xs mt-2">{submitError}</p>}
+                    </>
+                  )}
                 </>
               )}
             </div>
@@ -353,12 +424,12 @@ export default function RoomPage() {
                         onChange={e => setGuessInput(e.target.value.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 7))}
                         onKeyDown={e => e.key === 'Enter' && submitGuess()}
                         maxLength={7}
-                        className="border border-gray-300 px-3 py-2 text-sm font-mono flex-1 uppercase"
+                        className="border border-gray-300 px-3 py-2 text-sm font-mono flex-1 uppercase focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black"
                       />
                       <button
                         onClick={submitGuess}
                         disabled={submitting || !inputIsValid}
-                        className="px-4 py-2 bg-black text-white text-sm disabled:opacity-50"
+                        className="px-4 py-2 bg-black text-white text-sm disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-black"
                       >
                         {submitting ? '…' : 'Solve'}
                       </button>
@@ -493,7 +564,7 @@ export default function RoomPage() {
                     <button
                       onClick={startNextRound}
                       disabled={readying}
-                      className="px-5 py-2 bg-black text-white text-sm font-medium disabled:opacity-50"
+                      className="px-5 py-2 bg-black text-white text-sm font-medium disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-black"
                     >
                       {readying ? '…' : 'Start Next Word'}
                     </button>
@@ -507,7 +578,7 @@ export default function RoomPage() {
         </>
       )}
 
-      {/* Invite link — only while room is open */}
+      {/* Invite link — only while room is in lobby */}
       {room.phase === 'contribution' && !room.is_locked && (
         <div className="mt-8 p-3 bg-gray-50 text-xs text-gray-500">
           <p className="font-medium mb-1">Invite link:</p>

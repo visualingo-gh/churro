@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getRoomById, getMembersByRoom, addMemberToRoom, lockRoom, getUserById } from '@/lib/db';
+import { getRoomById, getMembersByRoom, addMemberToRoom, getUserById } from '@/lib/db';
 
 export async function POST(
   req: NextRequest,
@@ -45,11 +45,6 @@ export async function POST(
       userId: user.id,
       displayName: user.display_name,
     });
-
-    // Lock if now full
-    if (members.length + 1 >= room.max_players) {
-      await lockRoom(id);
-    }
 
     return NextResponse.json({ member });
   } catch {

@@ -60,6 +60,10 @@ export async function POST(
 
   // ── CONTRIBUTION ──────────────────────────────────────────────────────────
   if (room.phase === 'contribution') {
+    if (!room.is_locked) {
+      return NextResponse.json({ error: 'Game has not started yet' }, { status: 400 });
+    }
+
     const alreadySubmitted = guesses.some(
       g => g.user_id === userId && g.phase === 'contribution'
     );
@@ -72,9 +76,9 @@ export async function POST(
       phase: 'contribution', guess: normalized, isCorrect: null,
     });
 
-    // Advance when all members have contributed (min 2)
+    // Advance when all members have contributed
     const contributionCount = guesses.filter(g => g.phase === 'contribution').length + 1;
-    if (contributionCount >= members.length && members.length >= 2) {
+    if (contributionCount >= members.length) {
       await advanceRoomPhase(id, 'contribution', 'reveal');
     }
 

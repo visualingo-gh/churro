@@ -22,7 +22,6 @@ export default function Dashboard() {
   const [rooms, setRooms] = useState<RoomEntry[]>([]);
   const [loadingRooms, setLoadingRooms] = useState(false);
 
-  const [maxPlayers, setMaxPlayers] = useState(4);
   const [creatingRoom, setCreatingRoom] = useState(false);
   const [roomError, setRoomError] = useState<string | null>(null);
 
@@ -87,7 +86,7 @@ export default function Dashboard() {
       const res = await fetch('/api/rooms', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: user.id, maxPlayers }),
+        body: JSON.stringify({ userId: user.id }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
@@ -191,7 +190,7 @@ export default function Dashboard() {
                 <div className="flex gap-3 mt-0.5 text-xs text-gray-400">
                   <span className="capitalize">{room.phase}</span>
                   <span>Streak {room.streak_count}</span>
-                  <span>{members.length}/{room.max_players} players</span>
+                  <span>{members.length} player{members.length !== 1 ? 's' : ''}</span>
                 </div>
               </button>
             ))}
@@ -202,22 +201,11 @@ export default function Dashboard() {
       {/* Create room */}
       <div className="mb-6 border border-gray-200 p-4 space-y-3">
         <p className="text-sm font-medium">Create a room</p>
-        <div className="flex items-center gap-3">
-          <label className="text-xs text-gray-500">Players:</label>
-          {[2, 3, 4].map(n => (
-            <button
-              key={n}
-              onClick={() => setMaxPlayers(n)}
-              className={`w-8 h-8 text-sm border ${maxPlayers === n ? 'bg-black text-white border-black' : 'border-gray-300'}`}
-            >
-              {n}
-            </button>
-          ))}
-        </div>
+        <p className="text-xs text-gray-400">Invite others via the room link. Start when ready.</p>
         <button
           onClick={createRoom}
           disabled={creatingRoom}
-          className="px-5 py-2 bg-black text-white text-sm font-medium disabled:opacity-50"
+          className="px-5 py-2 bg-black text-white text-sm font-medium disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-black"
         >
           {creatingRoom ? 'Creating…' : 'Create Room'}
         </button>
