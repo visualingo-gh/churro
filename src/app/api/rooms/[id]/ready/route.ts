@@ -35,8 +35,11 @@ export async function POST(
   // Idempotent: setting true twice is fine
   await setMemberReady(userId, id);
 
+  // Count ready members; always include the requesting user in case the DB
+  // update failed silently (e.g. column missing / RLS) — ensures 1-player
+  // rooms always advance.
   const updatedMembers = await getMembersByRoom(id);
-  const readyCount = updatedMembers.filter(m => m.ready_for_next).length;
+  const readyCount = updatedMembers.filter(m => m.ready_for_next || m.user_id === userId).length;
 
   if (readyCount >= members.length) {
     await advanceToNextRound(id, room.game_date);
