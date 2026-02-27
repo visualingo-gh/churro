@@ -108,17 +108,19 @@ export async function setMemberReady(userId: string, roomId: string): Promise<vo
 export async function advanceToNextRound(roomId: string, currentGameDate: string): Promise<void> {
   const next = (parseInt(currentGameDate, 10) + 1).toString();
 
-  await supabase
+  const { error: roomError } = await supabase
     .from('rooms')
     .update({ phase: 'contribution', game_date: next })
     .eq('id', roomId)
     .eq('game_date', currentGameDate)
     .eq('phase', 'complete');
+  if (roomError) throw new Error(roomError.message);
 
-  await supabase
+  const { error: membersError } = await supabase
     .from('room_members')
     .update({ reveal_viewed_at: null, ready_for_next: false })
     .eq('room_id', roomId);
+  if (membersError) throw new Error(membersError.message);
 }
 
 // ── Room members ──────────────────────────────────────────────────────────────

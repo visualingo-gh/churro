@@ -42,7 +42,11 @@ export async function POST(
   const readyCount = updatedMembers.filter(m => m.ready_for_next || m.user_id === userId).length;
 
   if (readyCount >= members.length) {
-    await advanceToNextRound(id, room.game_date);
+    try {
+      await advanceToNextRound(id, room.game_date);
+    } catch (e) {
+      return NextResponse.json({ error: (e as Error).message }, { status: 500 });
+    }
     return NextResponse.json({ advanced: true });
   }
 
