@@ -1,4 +1,5 @@
-export function relativeTime(ts: string): string {
+export function relativeTime(ts: string | null | undefined): string {
+  if (!ts) return '';
   const diff = Date.now() - new Date(ts).getTime();
   const minutes = Math.floor(diff / 60_000);
   if (minutes < 2) return 'Active now';

@@ -53,6 +53,7 @@ export default function RoomPage() {
   const [joinError, setJoinError] = useState<string | null>(null);
 
   const [readying, setReadying] = useState(false);
+  const [hasClickedReady, setHasClickedReady] = useState(false);
 
   const [beginConfirm, setBeginConfirm] = useState(false);
   const [beginning, setBeginning] = useState(false);
@@ -97,6 +98,7 @@ export default function RoomPage() {
         revealFetchedForDate.current = null;
         setRevealData(null);
         setPlayerKnowledge(null);
+        setHasClickedReady(false);
       }
 
       await fetchReveal(uid, data.room);
@@ -180,6 +182,7 @@ export default function RoomPage() {
   async function startNextRound() {
     if (!userId || readying) return;
     setReadying(true);
+    setHasClickedReady(true);
     try {
       await fetch(`/api/rooms/${id}/ready`, {
         method: 'POST',
@@ -359,7 +362,9 @@ export default function RoomPage() {
               <p className="text-sm text-stone-800">
                 {m.display_name}{m.user_id === userId ? ' (you)' : ''}
               </p>
-              <p className="text-xs text-gray-400">{relativeTime(m.last_action_at)}</p>
+              {m.last_action_at && (
+                <p className="text-xs text-gray-400">{relativeTime(m.last_action_at)}</p>
+              )}
             </div>
           ))}
           {!room.is_locked && room.phase === 'contribution' && members.length < 4 && (
@@ -645,7 +650,7 @@ export default function RoomPage() {
                   <p className="text-xs text-gray-500 mb-3">
                     {members.filter(m => m.ready_for_next).length} of {members.length} ready for next word
                   </p>
-                  {members.find(m => m.user_id === userId)?.ready_for_next ? (
+                  {(hasClickedReady || members.find(m => m.user_id === userId)?.ready_for_next) ? (
                     <p className="text-sm text-gray-500">You&apos;re ready. Waiting for others…</p>
                   ) : (
                     <button

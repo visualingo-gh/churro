@@ -23,8 +23,8 @@ export async function POST(
     return NextResponse.json({ error: 'Room not found' }, { status: 404 });
   }
 
-  if (room.phase !== 'complete') {
-    return NextResponse.json({ error: 'Round must be complete' }, { status: 400 });
+  if (room.phase !== 'complete' && room.phase !== 'expired') {
+    return NextResponse.json({ error: 'Round must be complete or expired' }, { status: 400 });
   }
 
   const members = await getMembersByRoom(id);

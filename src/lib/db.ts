@@ -162,7 +162,7 @@ export async function advanceToNextRound(roomId: string, currentGameDate: string
     .update({ phase: 'contribution', game_date: next, expires_at: expiresAt })
     .eq('id', roomId)
     .eq('game_date', currentGameDate)
-    .eq('phase', 'complete');
+    .in('phase', ['complete', 'expired']);
   if (roomError) throw new Error(roomError.message);
 
   const { error: membersError } = await supabase
