@@ -4,6 +4,12 @@
 // knownPositions: pre-filled locked slots (user cannot edit these).
 // onValueChange: called with current value string + whether all free slots are filled.
 // onSubmit: called when Enter is pressed and value is complete.
+//
+// Mobile keyboard strategy:
+//   A real <input> is the focus target (positioned absolute, opacity-0).
+//   Tapping the rail focuses it → iOS/Android virtual keyboard appears.
+//   onKeyDown handles special keys (Backspace, Enter, Arrows).
+//   onChange handles character input on both mobile and desktop.
 
 import { useEffect, useRef, useState } from 'react';
 import { GAME_CONFIG } from '@/lib/game-config';
@@ -15,62 +21,51 @@ type Props = {
   disabled?: boolean;
 };
 
-function firstFreeIndex(knownPositions: (string | null)[]): number {
-  const i = knownPositions.findIndex(p => p === null);
+function firstFreeIndex(known: (string | null)[]): number {
+  const i = known.findIndex(p => p === null);
   return i === -1 ? GAME_CONFIG.wordLength : i;
-}
-
-function lastFreeIndex(knownPositions: (string | null)[]): number {
-  for (let i = GAME_CONFIG.wordLength - 1; i >= 0; i--) {
-    if (knownPositions[i] === null) return i;
-  }
-  return -1;
 }
 
 export function EntryRail({ knownPositions, onValueChange, onSubmit, disabled }: Props) {
   const [typed, setTyped] = useState<string[]>(() => Array(GAME_CONFIG.wordLength).fill(''));
   const [cursor, setCursor] = useState<number>(() => firstFreeIndex(knownPositions));
-  const railRef = useRef<HTMLDivElement>(null);
+  const [focused, setFocused] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
 
-  // Reset typed state when knownPositions changes (e.g. after a guess locks new positions)
   const knownKey = knownPositions.join(',');
   useEffect(() => {
-    const next = Array(GAME_CONFIG.wordLength).fill('');
-    setTyped(next);
+    const blank = Array(GAME_CONFIG.wordLength).fill('');
+    setTyped(blank);
     setCursor(firstFreeIndex(knownPositions));
-    // Notify parent of reset
-    const value = buildValue(knownPositions, next);
-    onValueChange(value, false);
+    if (inputRef.current) inputRef.current.value = '';
+    onValueChange(buildValue(knownPositions, blank), false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [knownKey]);
 
   function buildValue(known: (string | null)[], t: string[]): string {
-    return Array.from({ length: GAME_CONFIG.wordLength }, (_, i) =>
-      known[i] ?? t[i] ?? ''
-    ).join('');
+    return Array.from({ length: GAME_CONFIG.wordLength }, (_, i) => known[i] ?? t[i] ?? '').join('');
   }
 
-  function nextFreeAfter(pos: number): number {
-    for (let i = pos + 1; i < GAME_CONFIG.wordLength; i++) {
+  function nextFreeFrom(pos: number): number {
+    for (let i = pos; i < GAME_CONFIG.wordLength; i++) {
       if (knownPositions[i] === null) return i;
     }
-    return pos; // stay at current if no free slot ahead
+    return GAME_CONFIG.wordLength;
   }
 
   function prevFreeBefore(pos: number): number {
     for (let i = pos - 1; i >= 0; i--) {
       if (knownPositions[i] === null) return i;
     }
-    return pos; // stay if no free slot behind
+    return pos;
   }
 
-  function handleKeyDown(e: React.KeyboardEvent) {
+  function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
     if (disabled) return;
 
     if (e.key === 'Enter') {
       const value = buildValue(knownPositions, typed);
-      const allFilled = value.split('').every(ch => ch !== '');
-      if (allFilled) {
+      if (value.split('').every(ch => ch !== '')) {
         e.preventDefault();
         onSubmit();
       }
@@ -79,33 +74,16 @@ export function EntryRail({ knownPositions, onValueChange, onSubmit, disabled }:
 
     if (e.key === 'Backspace') {
       e.preventDefault();
+      if (inputRef.current) inputRef.current.value = '';
       let target = cursor;
-      // If current slot is already empty, move back first
-      if (!typed[target]) {
-        target = prevFreeBefore(cursor);
-      }
+      if (!typed[target]) target = prevFreeBefore(cursor);
       if (knownPositions[target] !== null) return;
       const next = [...typed];
       next[target] = '';
       setTyped(next);
       setCursor(target);
       const value = buildValue(knownPositions, next);
-      const allFilled = value.split('').every(ch => ch !== '');
-      onValueChange(value, allFilled);
-      return;
-    }
-
-    if (/^[a-zA-Z]$/.test(e.key)) {
-      e.preventDefault();
-      if (knownPositions[cursor] !== null) return;
-      const next = [...typed];
-      next[cursor] = e.key.toUpperCase();
-      setTyped(next);
-      const value = buildValue(knownPositions, next);
-      const newCursor = nextFreeAfter(cursor);
-      setCursor(newCursor);
-      const allFilled = value.split('').every(ch => ch !== '');
-      onValueChange(value, allFilled);
+      onValueChange(value, false);
       return;
     }
 
@@ -117,47 +95,90 @@ export function EntryRail({ knownPositions, onValueChange, onSubmit, disabled }:
 
     if (e.key === 'ArrowRight') {
       e.preventDefault();
-      setCursor(nextFreeAfter(cursor));
+      const nxt = nextFreeFrom(cursor + 1);
+      if (nxt < GAME_CONFIG.wordLength) setCursor(nxt);
       return;
     }
+
+    // Letter keys: don't preventDefault — let them reach onChange
+  }
+
+  function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
+    if (disabled) return;
+    const raw = e.target.value.toUpperCase().replace(/[^A-Z]/g, '');
+    // Keep input empty so it acts as a single-char buffer
+    e.target.value = '';
+    if (!raw) return;
+
+    let newTyped = [...typed];
+    let newCursor = cursor;
+
+    for (const ch of raw.split('')) {
+      const pos = nextFreeFrom(newCursor);
+      if (pos >= GAME_CONFIG.wordLength) break;
+      newTyped[pos] = ch;
+      newCursor = nextFreeFrom(pos + 1);
+      if (newCursor >= GAME_CONFIG.wordLength) newCursor = pos;
+    }
+
+    setTyped(newTyped);
+    setCursor(newCursor);
+    const value = buildValue(knownPositions, newTyped);
+    const allFilled = value.split('').every(ch => ch !== '');
+    onValueChange(value, allFilled);
+  }
+
+  function focusInput() {
+    if (!disabled) inputRef.current?.focus();
   }
 
   function handleSlotClick(i: number) {
     if (disabled) return;
-    if (knownPositions[i] !== null) return;
-    setCursor(i);
-    railRef.current?.focus();
+    if (knownPositions[i] === null) setCursor(i);
+    inputRef.current?.focus();
   }
-
-  const value = buildValue(knownPositions, typed);
-  const isLast = lastFreeIndex(knownPositions) === cursor;
 
   return (
     <div
-      ref={railRef}
-      tabIndex={disabled ? -1 : 0}
-      onKeyDown={handleKeyDown}
-      className="flex gap-2 focus:outline-none"
+      className="relative inline-flex gap-2"
+      onClick={focusInput}
+      role="group"
       aria-label="Word entry"
     >
+      {/* Real input — visually hidden but focusable, triggers mobile keyboard */}
+      <input
+        ref={inputRef}
+        type="text"
+        inputMode="text"
+        autoCapitalize="characters"
+        autoComplete="off"
+        autoCorrect="off"
+        spellCheck={false}
+        className="absolute inset-0 opacity-0 cursor-default caret-transparent"
+        tabIndex={disabled ? -1 : 0}
+        disabled={disabled}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
+        onKeyDown={handleKeyDown}
+        onChange={handleChange}
+        aria-label="Word entry"
+      />
+
+      {/* Visual slots */}
       {Array.from({ length: GAME_CONFIG.wordLength }, (_, i) => {
         const locked = knownPositions[i] !== null;
         const letter = knownPositions[i] ?? typed[i] ?? '';
-        const isActive = !locked && i === cursor && !disabled;
+        const isActive = !locked && focused && i === cursor && !disabled;
 
         return (
           <div
             key={i}
-            onClick={() => handleSlotClick(i)}
+            onClick={(e) => { e.stopPropagation(); handleSlotClick(i); }}
             className="flex flex-col items-center gap-0.5"
           >
             <span
               className={`w-8 h-8 flex items-end justify-center pb-0.5 font-mono font-bold text-base ${
-                locked
-                  ? 'text-gray-900'
-                  : letter
-                  ? 'text-gray-900'
-                  : 'text-transparent'
+                locked || letter ? 'text-gray-900' : 'text-transparent'
               }`}
             >
               {letter || '_'}
@@ -177,15 +198,6 @@ export function EntryRail({ knownPositions, onValueChange, onSubmit, disabled }:
           </div>
         );
       })}
-      {/* invisible input for mobile keyboard on focus */}
-      <input
-        type="text"
-        aria-hidden
-        readOnly
-        value={value}
-        className="sr-only"
-        tabIndex={-1}
-      />
     </div>
   );
 }
