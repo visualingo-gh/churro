@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getRoomById, getMembersByRoom, lockRoom } from '@/lib/db';
+import { getRoomById, getMembersByRoom, lockRoom, touchMemberActivity } from '@/lib/db';
 
 export async function POST(
   req: NextRequest,
@@ -32,6 +32,7 @@ export async function POST(
   }
 
   await lockRoom(id);
+  await touchMemberActivity(userId, id);
 
   return NextResponse.json({ success: true });
 }

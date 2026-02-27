@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getRoomById, getMembersByRoom, addMemberToRoom, getUserById } from '@/lib/db';
+import { getRoomById, getMembersByRoom, addMemberToRoom, getUserById, touchRoomActivity } from '@/lib/db';
 
 export async function POST(
   req: NextRequest,
@@ -45,6 +45,8 @@ export async function POST(
       userId: user.id,
       displayName: user.display_name,
     });
+    // member.last_action_at set by DB DEFAULT; just refresh the room's expires_at
+    await touchRoomActivity(id);
 
     return NextResponse.json({ member });
   } catch {

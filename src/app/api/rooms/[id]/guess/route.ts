@@ -7,6 +7,8 @@ import {
   advanceRoomPhase,
   insertResult,
   updateStreakCount,
+  expireRoom,
+  touchMemberActivity,
 } from '@/lib/db';
 import {
   getGameWord,
@@ -45,9 +47,23 @@ export async function POST(
     return NextResponse.json({ error: 'Invalid word' }, { status: 400 });
   }
 
-  const room = await getRoomById(id);
+  let room = await getRoomById(id);
   if (!room) {
     return NextResponse.json({ error: 'Room not found' }, { status: 404 });
+  }
+
+  // Lazy expiry check
+  if (
+    room.expires_at &&
+    room.phase !== 'complete' &&
+    room.phase !== 'expired' &&
+    new Date(room.expires_at) <= new Date()
+  ) {
+    await expireRoom(id);
+    return NextResponse.json({ error: 'This round has expired' }, { status: 410 });
+  }
+  if (room.phase === 'expired') {
+    return NextResponse.json({ error: 'This round has expired' }, { status: 410 });
   }
 
   const members = await getMembersByRoom(id);
@@ -75,6 +91,7 @@ export async function POST(
       roomId: id, userId, gameDate,
       phase: 'contribution', guess: normalized, isCorrect: null,
     });
+    await touchMemberActivity(userId, id);
 
     // Advance when all members have contributed
     const contributionCount = guesses.filter(g => g.phase === 'contribution').length + 1;
@@ -102,6 +119,7 @@ export async function POST(
       roomId: id, userId, gameDate,
       phase: 'final', guess: normalized, isCorrect: correct,
     });
+    await touchMemberActivity(userId, id);
 
     // Re-fetch to include the just-inserted guess
     const allGuesses = await getGuessesByRoom(id, gameDate);

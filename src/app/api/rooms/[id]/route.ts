@@ -6,6 +6,7 @@ import {
   getResult,
   resetRoomForNewDay,
   softDeleteRoom,
+  expireRoom,
 } from '@/lib/db';
 import { getGameWord, computeRevealData, derivePlayerKnowledge } from '@/lib/game-engine';
 import { getAppMode, getTodayStringLA } from '@/lib/app-mode';
@@ -38,20 +39,31 @@ export async function GET(
     }
   }
 
+  // Lazy expiry: if the round has been inactive past expires_at, mark it expired
+  if (
+    room.expires_at &&
+    room.phase !== 'complete' &&
+    room.phase !== 'expired' &&
+    new Date(room.expires_at) <= new Date()
+  ) {
+    await expireRoom(id);
+    room = { ...room, phase: 'expired' };
+  }
+
   const [members, guesses, result] = await Promise.all([
     getMembersByRoom(id),
     getGuessesByRoom(id, room.game_date),
     getResult(id, room.game_date),
   ]);
 
-  // Expose the answer only once the game is complete
-  const answer = room.phase === 'complete'
+  // Expose the answer once the game is complete or expired
+  const answer = (room.phase === 'complete' || room.phase === 'expired')
     ? getGameWord(id, room.game_date)
     : null;
 
-  // Compute per-user knowledge when in final or complete phase
+  // Compute per-user knowledge when in final, complete, or expired phase
   let knowledge = null;
-  if (userId && (room.phase === 'final' || room.phase === 'complete')) {
+  if (userId && (room.phase === 'final' || room.phase === 'complete' || room.phase === 'expired')) {
     const secretWord = getGameWord(id, room.game_date);
     const contributionGuesses = guesses.filter(g => g.phase === 'contribution').map(g => g.guess);
     const revealData = computeRevealData(contributionGuesses, secretWord);

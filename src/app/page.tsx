@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type { Room, RoomMember, User } from '@/types/game';
+import { relativeTime } from '@/lib/relative-time';
 
 type RoomEntry = {
   room: Room;
@@ -25,8 +26,16 @@ function getStatusLine(
     case 'reveal':       return 'Processing reveal…';
     case 'final':        return 'Crack the Vault';
     case 'complete':     return result?.winner_user_id ? 'Vault Opened 🔓' : 'Vault Locked 🔒';
+    case 'expired':      return 'Vault expired';
     default:             return room.phase;
   }
+}
+
+function getLastMove(members: RoomMember[]): string | null {
+  const timestamps = members.map(m => m.last_action_at).filter(Boolean);
+  if (!timestamps.length) return null;
+  const latest = timestamps.reduce((a, b) => (a > b ? a : b));
+  return relativeTime(latest).replace('Active', 'Last move');
 }
 
 export default function Dashboard() {
@@ -194,25 +203,30 @@ export default function Dashboard() {
           <p className="text-sm text-gray-400">No vaults yet. Start or join one below.</p>
         ) : (
           <div className="flex flex-col gap-2">
-            {rooms.map(({ room, members, result }) => (
-              <button
-                key={room.id}
-                onClick={() => router.push(`/room/${room.id}`)}
-                className="text-left border border-gray-200 rounded-lg p-3 w-full
-                           transition-all hover:shadow-sm hover:-translate-y-px hover:border-stone-300"
-              >
-                <p className="text-sm font-medium text-stone-900">
-                  {getRoomTitle(members, user.id)}
-                </p>
-                <p className="text-xs text-stone-600 mt-0.5">
-                  {getStatusLine(room, result)}
-                </p>
-                <div className="flex gap-3 mt-1 text-xs text-gray-400">
-                  <span>{members.length} player{members.length !== 1 ? 's' : ''}</span>
-                  <span>Streak {room.streak_count}</span>
-                </div>
-              </button>
-            ))}
+            {rooms.map(({ room, members, result }) => {
+              const activePhase = room.phase !== 'complete' && room.phase !== 'expired';
+              const lastMove = activePhase ? getLastMove(members) : null;
+              return (
+                <button
+                  key={room.id}
+                  onClick={() => router.push(`/room/${room.id}`)}
+                  className="text-left border border-gray-200 rounded-lg p-3 w-full
+                             transition-all hover:shadow-sm hover:-translate-y-px hover:border-stone-300"
+                >
+                  <p className="text-sm font-medium text-stone-900">
+                    {getRoomTitle(members, user.id)}
+                  </p>
+                  <p className="text-xs text-stone-600 mt-0.5">
+                    {getStatusLine(room, result)}
+                    {lastMove && <span className="text-gray-400"> · {lastMove}</span>}
+                  </p>
+                  <div className="flex gap-3 mt-1 text-xs text-gray-400">
+                    <span>{members.length} player{members.length !== 1 ? 's' : ''}</span>
+                    <span>Streak {room.streak_count}</span>
+                  </div>
+                </button>
+              );
+            })}
           </div>
         )}
       </div>

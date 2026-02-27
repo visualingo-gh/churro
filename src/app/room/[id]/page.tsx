@@ -8,6 +8,7 @@ import { PositionDisplay } from '@/components/PositionDisplay';
 import { EntryRail } from '@/components/EntryRail';
 import { GAME_CONFIG } from '@/lib/game-config';
 import { getAppMode } from '@/lib/app-mode';
+import { relativeTime } from '@/lib/relative-time';
 
 const APP_MODE = getAppMode();
 
@@ -64,7 +65,7 @@ export default function RoomPage() {
 
   const fetchReveal = useCallback(async (uid: string | null, room: Room) => {
     const { phase, game_date } = room;
-    if (!['reveal', 'final', 'complete'].includes(phase)) return;
+    if (!['reveal', 'final', 'complete', 'expired'].includes(phase)) return;
     if (revealFetchedForDate.current === game_date) return;
 
     revealFetchedForDate.current = game_date;
@@ -256,6 +257,7 @@ export default function RoomPage() {
     : room.phase === 'contribution' ? 'Add Your Word'
     : room.phase === 'reveal' ? 'Reveal'
     : room.phase === 'final' ? 'Crack the Vault'
+    : room.phase === 'expired' ? 'Expired'
     : 'Complete';
 
   return (
@@ -351,11 +353,14 @@ export default function RoomPage() {
         <p className="text-xs font-medium text-gray-400 mb-1 uppercase tracking-wide">
           Players ({members.length})
         </p>
-        <div className="flex flex-col gap-0.5">
+        <div className="flex flex-col gap-1.5">
           {members.map(m => (
-            <p key={m.user_id} className="text-sm text-stone-800">
-              {m.display_name}{m.user_id === userId ? ' (you)' : ''}
-            </p>
+            <div key={m.user_id}>
+              <p className="text-sm text-stone-800">
+                {m.display_name}{m.user_id === userId ? ' (you)' : ''}
+              </p>
+              <p className="text-xs text-gray-400">{relativeTime(m.last_action_at)}</p>
+            </div>
           ))}
           {!room.is_locked && room.phase === 'contribution' && members.length < 4 && (
             <p className="text-sm text-gray-400">Waiting for others to join…</p>
@@ -654,6 +659,29 @@ export default function RoomPage() {
                 </div>
               ) : (
                 <p className="text-sm text-gray-400">New word tomorrow.</p>
+              )}
+            </div>
+          )}
+
+          {/* ── EXPIRED ── */}
+          {room.phase === 'expired' && (
+            <div className="mb-6 space-y-4">
+              <div className="border border-gray-200 rounded-lg p-4 space-y-2">
+                <p className="text-xs font-medium text-gray-400 uppercase tracking-wide">Vault Expired</p>
+                <p className="text-sm text-gray-500">This vault went quiet and expired due to inactivity.</p>
+                <p className="font-mono text-2xl tracking-widest font-bold text-gray-300">
+                  {answer ?? '???????'}
+                </p>
+                <p className="text-xs text-gray-400">No streak change.</p>
+              </div>
+              {APP_MODE === 'round' && (
+                <button
+                  onClick={startNextRound}
+                  disabled={readying}
+                  className="px-5 py-2 bg-stone-900 text-white text-sm font-medium rounded disabled:opacity-50"
+                >
+                  {readying ? '…' : 'Start New Round'}
+                </button>
               )}
             </div>
           )}

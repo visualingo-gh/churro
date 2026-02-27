@@ -1,4 +1,4 @@
-export type GamePhase = 'contribution' | 'reveal' | 'final' | 'complete';
+export type GamePhase = 'contribution' | 'reveal' | 'final' | 'complete' | 'expired';
 
 export interface User {
   id: string;
@@ -17,6 +17,7 @@ export interface Room {
   game_date: string; // round mode: "1","2",… | daily mode: "YYYY-MM-DD" (LA tz)
   created_at: string;
   deleted_at: string | null;
+  expires_at: string | null;
 }
 
 export interface RoomMember {
@@ -26,6 +27,7 @@ export interface RoomMember {
   joined_at: string;
   reveal_viewed_at: string | null;
   ready_for_next: boolean; // round mode: true when player has clicked "Start Next Word"
+  last_action_at: string;
 }
 
 export interface Guess {

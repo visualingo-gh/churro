@@ -66,6 +66,44 @@ export async function advanceRoomPhase(
     .eq('phase', fromPhase);
 }
 
+// Update a member's last_action_at and refresh the room's expires_at window.
+// Call on: begin game, contribution guess, final guess, ready/next-round.
+export async function touchMemberActivity(userId: string, roomId: string): Promise<void> {
+  const now = new Date().toISOString();
+  const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
+  await Promise.all([
+    supabase
+      .from('room_members')
+      .update({ last_action_at: now })
+      .eq('user_id', userId)
+      .eq('room_id', roomId),
+    supabase
+      .from('rooms')
+      .update({ expires_at: expiresAt })
+      .eq('id', roomId),
+  ]);
+}
+
+// Refresh the room's expires_at without targeting a specific member (e.g. on join).
+export async function touchRoomActivity(roomId: string): Promise<void> {
+  const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
+  await supabase
+    .from('rooms')
+    .update({ expires_at: expiresAt })
+    .eq('id', roomId);
+}
+
+// Set phase = 'expired' if not already complete/expired.
+// Safe for concurrent calls — second call updates 0 rows.
+export async function expireRoom(roomId: string): Promise<void> {
+  await supabase
+    .from('rooms')
+    .update({ phase: 'expired' })
+    .eq('id', roomId)
+    .neq('phase', 'complete')
+    .neq('phase', 'expired');
+}
+
 // Soft-delete a room. Requires: ALTER TABLE rooms ADD COLUMN deleted_at timestamptz;
 export async function softDeleteRoom(roomId: string): Promise<void> {
   const { error } = await supabase
@@ -92,9 +130,10 @@ export async function updateStreakCount(roomId: string, streakCount: number): Pr
 
 // Lazy daily reset (daily mode): new calendar day → new game.
 export async function resetRoomForNewDay(roomId: string, newDate: string): Promise<void> {
+  const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
   await supabase
     .from('rooms')
-    .update({ phase: 'contribution', game_date: newDate })
+    .update({ phase: 'contribution', game_date: newDate, expires_at: expiresAt })
     .eq('id', roomId);
 
   await supabase
@@ -116,10 +155,11 @@ export async function setMemberReady(userId: string, roomId: string): Promise<vo
 // Idempotent: guarded by current game_date + phase so concurrent requests are no-ops.
 export async function advanceToNextRound(roomId: string, currentGameDate: string): Promise<void> {
   const next = (parseInt(currentGameDate, 10) + 1).toString();
+  const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
 
   const { error: roomError } = await supabase
     .from('rooms')
-    .update({ phase: 'contribution', game_date: next })
+    .update({ phase: 'contribution', game_date: next, expires_at: expiresAt })
     .eq('id', roomId)
     .eq('game_date', currentGameDate)
     .eq('phase', 'complete');

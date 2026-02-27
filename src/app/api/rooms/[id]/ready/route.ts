@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getRoomById, getMembersByRoom, setMemberReady, advanceToNextRound } from '@/lib/db';
+import { getRoomById, getMembersByRoom, setMemberReady, advanceToNextRound, touchMemberActivity } from '@/lib/db';
 import { getAppMode } from '@/lib/app-mode';
 
 export async function POST(
@@ -34,6 +34,7 @@ export async function POST(
 
   // Idempotent: setting true twice is fine
   await setMemberReady(userId, id);
+  await touchMemberActivity(userId, id);
 
   // Count ready members; always include the requesting user in case the DB
   // update failed silently (e.g. column missing / RLS) — ensures 1-player
