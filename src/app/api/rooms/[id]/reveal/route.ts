@@ -24,12 +24,10 @@ export async function GET(
   const gameDate = room.game_date;
   const guesses = await getGuessesByRoom(id, gameDate);
   const secretWord = getGameWord(id, gameDate);
-  const seed = `${id}:${gameDate}`;
 
   const revealData = computeRevealData(
     guesses.filter(g => g.phase === 'contribution').map(g => g.guess),
     secretWord,
-    seed,
   );
 
   if (userId) {

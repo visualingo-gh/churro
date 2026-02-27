@@ -1,30 +1,25 @@
-// Renders the 7-letter word as a series of slots.
-// — revealedIndex: the guaranteed position hint from Phase 2 (shown in blue).
-// — knownPositions: per-player accumulated knowledge; filled slots shown in dark.
-// — No per-position Wordle-style comparison is performed.
+// Renders the word as a series of slots.
+// knownPositions: per-player accumulated knowledge; filled slots shown in dark.
+// No per-position Wordle-style comparison is performed.
+
+import { GAME_CONFIG } from '@/lib/game-config';
 
 type Props = {
   knownPositions: (string | null)[];
-  revealedIndex: number | null;
 };
 
-export function PositionDisplay({ knownPositions, revealedIndex }: Props) {
+export function PositionDisplay({ knownPositions }: Props) {
   return (
     <div className="flex gap-2">
-      {Array.from({ length: 7 }, (_, i) => {
+      {Array.from({ length: GAME_CONFIG.wordLength }, (_, i) => {
         const letter = knownPositions[i] ?? '';
-        const isRevealHint = letter === '' && i === revealedIndex;
         const isFilled = letter !== '';
 
         return (
           <div key={i} className="flex flex-col items-center gap-0.5">
             <span
               className={`w-8 h-8 flex items-end justify-center pb-0.5 font-mono font-bold text-base ${
-                isRevealHint
-                  ? 'text-blue-600'
-                  : isFilled
-                  ? 'text-gray-900'
-                  : 'text-transparent'
+                isFilled ? 'text-gray-900' : 'text-transparent'
               }`}
             >
               {letter || '_'}

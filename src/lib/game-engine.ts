@@ -1,4 +1,5 @@
 import { getAnswerList } from './dictionary';
+import { GAME_CONFIG } from './game-config';
 import type { Guess, PlayerKnowledge, RevealData } from '@/types/game';
 
 // DJB2 hash — simple, deterministic, no dependencies
@@ -22,11 +23,10 @@ export function getGameWord(roomId: string, gameKey: string): string {
 
 // Aggregates contribution guesses into the reveal payload.
 // presentLetters / eliminatedLetters come from what players guessed.
-// revealedPosition is a bonus hint — chosen deterministically from the secret word via the round seed.
+// knownPositions: slots where a contribution guess matched the secret exactly.
 export function computeRevealData(
   contributionGuesses: string[],
   secretWord: string,
-  seed: string, // '{roomId}:{roundNumber}'
 ): RevealData {
   const secret = secretWord.toUpperCase();
   const secretSet = new Set(secret.split(''));
@@ -38,16 +38,21 @@ export function computeRevealData(
   const presentLetters = [...allGuessedLetters].filter(l => secretSet.has(l)).sort();
   const eliminatedLetters = [...allGuessedLetters].filter(l => !secretSet.has(l)).sort();
 
-  const posIndex = djb2Hash(seed) % secret.length;
-  const revealedPosition = { index: posIndex, letter: secret[posIndex] };
+  const knownPositions: (string | null)[] = Array(GAME_CONFIG.wordLength).fill(null);
+  for (const guess of contributionGuesses) {
+    const g = guess.toUpperCase();
+    for (let i = 0; i < GAME_CONFIG.wordLength; i++) {
+      if (g[i] === secret[i]) knownPositions[i] = secret[i];
+    }
+  }
 
-  return { presentLetters, eliminatedLetters, revealedPosition };
+  return { presentLetters, eliminatedLetters, knownPositions };
 }
 
 export function validateGuess(guess: string): { valid: boolean; error?: string } {
   const cleaned = guess.trim().toUpperCase();
-  if (cleaned.length !== 7) {
-    return { valid: false, error: 'Guess must be exactly 7 letters' };
+  if (cleaned.length !== GAME_CONFIG.wordLength) {
+    return { valid: false, error: `Guess must be exactly ${GAME_CONFIG.wordLength} letters` };
   }
   if (!/^[A-Z]+$/.test(cleaned)) {
     return { valid: false, error: 'Guess must contain only letters' };
@@ -60,7 +65,7 @@ export function isCorrectGuess(guess: string, secretWord: string): boolean {
 }
 
 export function canSubmitFinalGuess(playerFinalGuessCount: number): boolean {
-  return playerFinalGuessCount < 2;
+  return playerFinalGuessCount < GAME_CONFIG.finalGuesses;
 }
 
 // Returns true when the game should transition to 'complete'
@@ -73,7 +78,7 @@ export function shouldAdvanceToComplete(params: {
   if (finalGuesses.some(g => g.is_correct === true)) return true;
 
   return members.every(
-    m => finalGuesses.filter(g => g.user_id === m.user_id).length >= 2
+    m => finalGuesses.filter(g => g.user_id === m.user_id).length >= GAME_CONFIG.finalGuesses
   );
 }
 
@@ -107,30 +112,26 @@ export function computeRoundResult(params: {
 }
 
 // Accumulates per-player knowledge from reveal data + their final guesses.
-// knownPositions is seeded from the revealed position hint, then each correct
-// final guess fills all 7 slots.
+// knownPositions is seeded from contribution exact-matches, then each final
+// guess adds per-position exact matches.
 export function derivePlayerKnowledge(
   answer: string,
   revealData: RevealData,
   finalGuesses: string[],
 ): PlayerKnowledge {
   const secret = answer.toUpperCase();
-  const knownPositions: (string | null)[] = Array(7).fill(null);
-
-  // Seed from the guaranteed reveal position
-  knownPositions[revealData.revealedPosition.index] = revealData.revealedPosition.letter;
+  const knownPositions: (string | null)[] = [...revealData.knownPositions];
 
   // Accumulate present/eliminated from reveal data (baseline from contributions)
   const presentSet = new Set<string>(revealData.presentLetters);
   const eliminatedSet = new Set<string>(revealData.eliminatedLetters);
 
-  // Each final guess: correct guess fills all positions; every guess updates letter knowledge
+  // Each final guess: fill exact-match positions; update letter knowledge
   for (const guess of finalGuesses) {
     const g = guess.toUpperCase();
-    if (g === secret) {
-      for (let i = 0; i < 7; i++) knownPositions[i] = secret[i];
+    for (let i = 0; i < GAME_CONFIG.wordLength; i++) {
+      if (g[i] === secret[i]) knownPositions[i] = secret[i];
     }
-    // Classify letters from this final guess against the answer
     for (const ch of g.split('')) {
       if (secret.includes(ch)) {
         presentSet.add(ch);

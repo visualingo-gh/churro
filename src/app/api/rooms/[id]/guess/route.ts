@@ -136,9 +136,8 @@ export async function POST(
 
     // Compute updated knowledge for this user after their guess
     const allGuessesAfter = await getGuessesByRoom(id, gameDate);
-    const seed = `${id}:${gameDate}`;
     const contributionWords = allGuessesAfter.filter(g => g.phase === 'contribution').map(g => g.guess);
-    const revealData = computeRevealData(contributionWords, secretWord, seed);
+    const revealData = computeRevealData(contributionWords, secretWord);
     const userFinalWords = allGuessesAfter
       .filter(g => g.user_id === userId && g.phase === 'final')
       .map(g => g.guess);

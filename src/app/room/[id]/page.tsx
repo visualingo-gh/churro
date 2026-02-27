@@ -5,7 +5,8 @@ import { useParams, useRouter } from 'next/navigation';
 import type { Guess, PlayerKnowledge, Result, RevealData, Room, RoomMember } from '@/types/game';
 import { LetterBank } from '@/components/LetterBank';
 import { PositionDisplay } from '@/components/PositionDisplay';
-import { ContributionSummary } from '@/components/ContributionSummary';
+import { EntryRail } from '@/components/EntryRail';
+import { GAME_CONFIG } from '@/lib/game-config';
 import { getAppMode } from '@/lib/app-mode';
 
 const APP_MODE = getAppMode();
@@ -35,7 +36,8 @@ export default function RoomPage() {
   const [loading, setLoading] = useState(true);
   const [pageError, setPageError] = useState<string | null>(null);
 
-  const [guessInput, setGuessInput] = useState('');
+  const [railValue, setRailValue] = useState('');
+  const [inputIsValid, setInputIsValid] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [lastCorrect, setLastCorrect] = useState<boolean | null>(null);
@@ -162,7 +164,7 @@ export default function RoomPage() {
   }
 
   async function submitGuess() {
-    if (!guessInput.trim() || !userId || submitting) return;
+    if (!railValue || !userId || submitting || !inputIsValid) return;
     setSubmitting(true);
     setSubmitError(null);
     setLastCorrect(null);
@@ -170,13 +172,14 @@ export default function RoomPage() {
       const res = await fetch(`/api/rooms/${id}/guess`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId, guess: guessInput.trim() }),
+        body: JSON.stringify({ userId, guess: railValue }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
       if (typeof data.correct === 'boolean') setLastCorrect(data.correct);
       if (data.knowledge) setPlayerKnowledge(data.knowledge);
-      setGuessInput('');
+      setRailValue('');
+      setInputIsValid(false);
       await fetchRoomState();
     } catch (e) {
       setSubmitError((e as Error).message);
@@ -196,19 +199,12 @@ export default function RoomPage() {
   const myContribution = guesses.find(g => g.user_id === userId && g.phase === 'contribution');
   const myFinalGuesses = guesses.filter(g => g.user_id === userId && g.phase === 'final');
   const contributionCount = guesses.filter(g => g.phase === 'contribution').length;
-  const remainingFinal = 2 - myFinalGuesses.length;
+  const remainingFinal = GAME_CONFIG.finalGuesses - myFinalGuesses.length;
   const correctFinalGuess = myFinalGuesses.find(g => g.is_correct === true) ?? null;
-  const inputIsValid = guessInput.length === 7 && /^[A-Z]+$/.test(guessInput);
 
-  // PositionDisplay data
-  const revealedIndex = revealData?.revealedPosition.index ?? null;
-  const knownPositions: (string | null)[] = playerKnowledge
-    ? playerKnowledge.knownPositions
-    : Array.from({ length: 7 }, (_, i) =>
-        revealData && i === revealData.revealedPosition.index
-          ? revealData.revealedPosition.letter
-          : null
-      );
+  const knownPositions: (string | null)[] = playerKnowledge?.knownPositions
+    ?? revealData?.knownPositions
+    ?? Array(GAME_CONFIG.wordLength).fill(null);
   const presentLetters = playerKnowledge?.presentLetters ?? revealData?.presentLetters ?? [];
   const eliminatedLetters = playerKnowledge?.eliminatedLetters ?? revealData?.eliminatedLetters ?? [];
 
@@ -339,26 +335,27 @@ export default function RoomPage() {
                   ) : (
                     <>
                       <p className="text-xs text-gray-400 mb-3">
-                        Submit one 7-letter word. No feedback until all players submit.
+                        Submit one {GAME_CONFIG.wordLength}-letter word. No feedback until all players submit.
                       </p>
-                      <div className="flex gap-2">
-                        <input
-                          type="text"
-                          placeholder="XXXXXXX"
-                          value={guessInput}
-                          onChange={e => setGuessInput(e.target.value.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 7))}
-                          onKeyDown={e => e.key === 'Enter' && submitGuess()}
-                          maxLength={7}
-                          className="border border-gray-300 px-3 py-2 text-sm font-mono flex-1 uppercase focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black"
+                      <div className="mb-4">
+                        <EntryRail
+                          key={`contribution-${room.game_date}`}
+                          knownPositions={Array(GAME_CONFIG.wordLength).fill(null)}
+                          onValueChange={(val, complete) => {
+                            setRailValue(val);
+                            setInputIsValid(complete);
+                          }}
+                          onSubmit={submitGuess}
+                          disabled={submitting}
                         />
-                        <button
-                          onClick={submitGuess}
-                          disabled={submitting || !inputIsValid}
-                          className="px-4 py-2 bg-black text-white text-sm disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-black"
-                        >
-                          {submitting ? '…' : 'Lock In'}
-                        </button>
                       </div>
+                      <button
+                        onClick={submitGuess}
+                        disabled={submitting || !inputIsValid}
+                        className="px-4 py-2 bg-black text-white text-sm disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-black"
+                      >
+                        {submitting ? '…' : 'Lock In'}
+                      </button>
                       {submitError && <p className="text-red-500 text-xs mt-2">{submitError}</p>}
                     </>
                   )}
@@ -380,15 +377,11 @@ export default function RoomPage() {
             <div className="mb-6 space-y-6">
               <p className="text-xs font-medium text-gray-500">PHASE 3 — FINAL SOLVE</p>
 
-              <PositionDisplay knownPositions={knownPositions} revealedIndex={revealedIndex} />
+              <PositionDisplay knownPositions={knownPositions} />
 
               <div>
                 <p className="text-xs text-gray-400 mb-2 uppercase tracking-wide">Letter bank</p>
                 <LetterBank presentLetters={presentLetters} eliminatedLetters={eliminatedLetters} />
-              </div>
-
-              <div className="border-l-2 border-gray-200 pl-3">
-                <ContributionSummary revealData={revealData} />
               </div>
 
               {myFinalGuesses.length > 0 && (
@@ -413,27 +406,28 @@ export default function RoomPage() {
                   <p className="text-sm text-green-700">You solved it. Waiting for others…</p>
                 ) : remainingFinal > 0 ? (
                   <>
-                    <p className="text-xs text-gray-400 mb-2">
+                    <p className="text-xs text-gray-400 mb-3">
                       {remainingFinal} guess{remainingFinal !== 1 ? 'es' : ''} remaining
                     </p>
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        placeholder="XXXXXXX"
-                        value={guessInput}
-                        onChange={e => setGuessInput(e.target.value.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 7))}
-                        onKeyDown={e => e.key === 'Enter' && submitGuess()}
-                        maxLength={7}
-                        className="border border-gray-300 px-3 py-2 text-sm font-mono flex-1 uppercase focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black"
+                    <div className="mb-4">
+                      <EntryRail
+                        key={`final-${room.game_date}-${myFinalGuesses.length}`}
+                        knownPositions={knownPositions}
+                        onValueChange={(val, complete) => {
+                          setRailValue(val);
+                          setInputIsValid(complete);
+                        }}
+                        onSubmit={submitGuess}
+                        disabled={submitting}
                       />
-                      <button
-                        onClick={submitGuess}
-                        disabled={submitting || !inputIsValid}
-                        className="px-4 py-2 bg-black text-white text-sm disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-black"
-                      >
-                        {submitting ? '…' : 'Solve'}
-                      </button>
                     </div>
+                    <button
+                      onClick={submitGuess}
+                      disabled={submitting || !inputIsValid}
+                      className="px-4 py-2 bg-black text-white text-sm disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-black"
+                    >
+                      {submitting ? '…' : 'Solve'}
+                    </button>
                     {submitError && <p className="text-red-500 text-xs mt-2">{submitError}</p>}
                   </>
                 ) : (
@@ -446,7 +440,7 @@ export default function RoomPage() {
           )}
 
           {/* ── COMPLETE ── */}
-          {room.phase === 'complete' && revealData && (
+          {room.phase === 'complete' && (
             <div className="mb-6 space-y-6">
 
               {/* Vault result */}
@@ -541,16 +535,6 @@ export default function RoomPage() {
               <div className="text-xs text-gray-400 space-y-0.5">
                 <p>{guesses.filter(g => g.phase === 'contribution').length}/{members.length} contributed</p>
                 <p>{new Set(guesses.filter(g => g.phase === 'final').map(g => g.user_id)).size}/{members.length} attempted final solve</p>
-              </div>
-
-              {/* Position + letter bank review */}
-              <PositionDisplay knownPositions={knownPositions} revealedIndex={revealedIndex} />
-              <div>
-                <p className="text-xs text-gray-400 mb-2 uppercase tracking-wide">Letter bank</p>
-                <LetterBank presentLetters={presentLetters} eliminatedLetters={eliminatedLetters} />
-              </div>
-              <div className="border-l-2 border-gray-200 pl-3">
-                <ContributionSummary revealData={revealData} />
               </div>
 
               {APP_MODE === 'round' ? (

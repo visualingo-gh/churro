@@ -50,7 +50,7 @@ export interface Result {
 export interface RevealData {
   presentLetters: string[];
   eliminatedLetters: string[];
-  revealedPosition: { index: number; letter: string };
+  knownPositions: (string | null)[];
 }
 
 export interface PlayerKnowledge {

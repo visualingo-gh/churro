@@ -45,9 +45,8 @@ export async function GET(
   let knowledge = null;
   if (userId && (room.phase === 'final' || room.phase === 'complete')) {
     const secretWord = getGameWord(id, room.game_date);
-    const seed = `${id}:${room.game_date}`;
     const contributionGuesses = guesses.filter(g => g.phase === 'contribution').map(g => g.guess);
-    const revealData = computeRevealData(contributionGuesses, secretWord, seed);
+    const revealData = computeRevealData(contributionGuesses, secretWord);
     const userFinalGuesses = guesses
       .filter(g => g.user_id === userId && g.phase === 'final')
       .map(g => g.guess);
