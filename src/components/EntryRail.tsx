@@ -140,7 +140,7 @@ export function EntryRail({ knownPositions, onValueChange, onSubmit, disabled }:
 
   return (
     <div
-      className="relative inline-flex gap-2"
+      className="relative inline-flex gap-3"
       onClick={focusInput}
       role="group"
       aria-label="Word entry"
@@ -164,7 +164,7 @@ export function EntryRail({ knownPositions, onValueChange, onSubmit, disabled }:
         aria-label="Word entry"
       />
 
-      {/* Visual slots */}
+      {/* Visual slots — gap-3 for breathing room */}
       {Array.from({ length: GAME_CONFIG.wordLength }, (_, i) => {
         const locked = knownPositions[i] !== null;
         const letter = knownPositions[i] ?? typed[i] ?? '';
@@ -177,21 +177,25 @@ export function EntryRail({ knownPositions, onValueChange, onSubmit, disabled }:
             className="flex flex-col items-center gap-0.5"
           >
             <span
-              className={`w-8 h-8 flex items-end justify-center pb-0.5 font-mono font-bold text-base ${
-                locked || letter ? 'text-gray-900' : 'text-transparent'
+              className={`w-9 h-9 flex items-end justify-center pb-0.5 font-mono text-base ${
+                locked
+                  ? 'font-extrabold text-stone-800'   // locked: heavier weight, warm dark
+                  : letter
+                  ? 'font-bold text-stone-700'         // typed: bold but slightly lighter
+                  : 'font-bold text-transparent'
               }`}
             >
               {letter || '_'}
             </span>
             <div
-              className={`w-8 h-0.5 ${
+              className={`w-9 h-0.5 rounded-full ${
                 isActive
                   ? 'bg-blue-500'
                   : locked
-                  ? 'bg-gray-800'
+                  ? 'bg-stone-700'   // locked: dark warm underline
                   : letter
-                  ? 'bg-gray-700'
-                  : 'bg-gray-300'
+                  ? 'bg-stone-500'   // typed: medium underline
+                  : 'bg-gray-400'    // empty: visible but not heavy
               }`}
             />
             <span className="text-xs text-gray-400">{i + 1}</span>

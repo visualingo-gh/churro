@@ -4,11 +4,29 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type { Room, RoomMember, User } from '@/types/game';
 
-type RoomEntry = { room: Room; members: RoomMember[] };
+type RoomEntry = {
+  room: Room;
+  members: RoomMember[];
+  result: { winner_user_id: string | null } | null;
+};
 
-function getRoomLabel(members: RoomMember[], userId: string): string {
-  if (!members.length) return 'Empty room';
-  return members.map(m => (m.user_id === userId ? 'You' : m.display_name)).join(' · ');
+function getRoomTitle(members: RoomMember[], userId: string): string {
+  const others = members.filter(m => m.user_id !== userId).map(m => m.display_name);
+  return others.length === 0 ? 'Solo Vault' : `You · ${others.join(' · ')}`;
+}
+
+function getStatusLine(
+  room: Room,
+  result: { winner_user_id: string | null } | null,
+): string {
+  if (!room.is_locked) return 'Lobby · invite others to join';
+  switch (room.phase) {
+    case 'contribution': return 'Adding words…';
+    case 'reveal':       return 'Processing reveal…';
+    case 'final':        return 'Crack the Vault';
+    case 'complete':     return result?.winner_user_id ? 'Vault Opened 🔓' : 'Vault Locked 🔒';
+    default:             return room.phase;
+  }
 }
 
 export default function Dashboard() {
@@ -27,7 +45,6 @@ export default function Dashboard() {
 
   const [joinId, setJoinId] = useState('');
 
-  // On mount, check localStorage for existing user
   useEffect(() => {
     const stored = localStorage.getItem('churro_user_id');
     if (stored) {
@@ -37,7 +54,6 @@ export default function Dashboard() {
           if (data?.user) {
             setUser(data.user);
           } else {
-            // Stale ID — clear it
             localStorage.removeItem('churro_user_id');
           }
         })
@@ -45,7 +61,6 @@ export default function Dashboard() {
     }
   }, []);
 
-  // Load rooms whenever user is set
   useEffect(() => {
     if (!user) { setRooms([]); return; }
     setLoadingRooms(true);
@@ -100,7 +115,6 @@ export default function Dashboard() {
   function goToRoom() {
     const trimmed = joinId.trim();
     if (!trimmed) return;
-    // Accept full URLs or bare room IDs
     const match = trimmed.match(/([0-9a-f-]{36})/i);
     router.push(`/room/${match ? match[1] : trimmed}`);
   }
@@ -110,12 +124,12 @@ export default function Dashboard() {
     return (
       <main className="min-h-screen flex flex-col items-center justify-center gap-8 p-8 max-w-sm mx-auto">
         <div className="text-center">
-          <h1 className="text-3xl font-bold tracking-tight">Churro</h1>
+          <h1 className="text-3xl font-bold tracking-tight text-stone-900">Churro</h1>
           <p className="text-sm text-gray-500 mt-1">Async multiplayer word vault</p>
         </div>
 
         <div className="w-full space-y-3">
-          <p className="text-sm font-medium">Choose a display name to get started:</p>
+          <p className="text-sm font-medium text-stone-800">Choose a display name to get started:</p>
           <div className="flex gap-2">
             <input
               type="text"
@@ -124,12 +138,12 @@ export default function Dashboard() {
               maxLength={20}
               onChange={e => setNameInput(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && createUser()}
-              className="border border-gray-300 px-3 py-2 text-sm flex-1"
+              className="border border-gray-300 rounded px-3 py-2 text-sm flex-1 focus:outline-none focus:ring-2 focus:ring-stone-400"
             />
             <button
               onClick={createUser}
               disabled={creatingUser || !nameInput.trim()}
-              className="px-4 py-2 bg-black text-white text-sm disabled:opacity-50"
+              className="px-4 py-2 bg-stone-900 text-white text-sm rounded disabled:opacity-50"
             >
               {creatingUser ? '…' : 'Start'}
             </button>
@@ -146,12 +160,12 @@ export default function Dashboard() {
               value={joinId}
               onChange={e => setJoinId(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && goToRoom()}
-              className="border border-gray-300 px-3 py-2 text-sm flex-1 font-mono"
+              className="border border-gray-300 rounded px-3 py-2 text-sm flex-1 font-mono focus:outline-none focus:ring-2 focus:ring-stone-400"
             />
             <button
               onClick={goToRoom}
               disabled={!joinId.trim()}
-              className="px-4 py-2 bg-gray-800 text-white text-sm disabled:opacity-50"
+              className="px-4 py-2 bg-stone-700 text-white text-sm rounded font-medium disabled:opacity-40"
             >
               Go
             </button>
@@ -166,31 +180,36 @@ export default function Dashboard() {
     <main className="min-h-screen p-8 max-w-md mx-auto font-sans">
       <div className="flex justify-between items-start mb-8">
         <div>
-          <h1 className="text-xl font-bold">Churro</h1>
+          <h1 className="text-xl font-bold text-stone-900">Churro</h1>
           <p className="text-xs text-gray-400 mt-0.5">Playing as <strong>{user.display_name}</strong></p>
         </div>
       </div>
 
       {/* Room list */}
       <div className="mb-8">
-        <p className="text-xs font-medium text-gray-500 mb-2">YOUR ROOMS</p>
+        <p className="text-xs font-medium text-gray-400 mb-3 uppercase tracking-wide">Your Vaults</p>
         {loadingRooms ? (
           <p className="text-sm text-gray-400">Loading…</p>
         ) : rooms.length === 0 ? (
-          <p className="text-sm text-gray-400">No rooms yet. Create or join one below.</p>
+          <p className="text-sm text-gray-400">No vaults yet. Start or join one below.</p>
         ) : (
           <div className="flex flex-col gap-2">
-            {rooms.map(({ room, members }) => (
+            {rooms.map(({ room, members, result }) => (
               <button
                 key={room.id}
                 onClick={() => router.push(`/room/${room.id}`)}
-                className="text-left border border-gray-200 p-3 hover:bg-gray-50 w-full"
+                className="text-left border border-gray-200 rounded-lg p-3 w-full
+                           transition-all hover:shadow-sm hover:-translate-y-px hover:border-stone-300"
               >
-                <p className="text-sm font-medium">{getRoomLabel(members, user.id)}</p>
-                <div className="flex gap-3 mt-0.5 text-xs text-gray-400">
-                  <span className="capitalize">{room.phase}</span>
-                  <span>Streak {room.streak_count}</span>
+                <p className="text-sm font-medium text-stone-900">
+                  {getRoomTitle(members, user.id)}
+                </p>
+                <p className="text-xs text-stone-600 mt-0.5">
+                  {getStatusLine(room, result)}
+                </p>
+                <div className="flex gap-3 mt-1 text-xs text-gray-400">
                   <span>{members.length} player{members.length !== 1 ? 's' : ''}</span>
+                  <span>Streak {room.streak_count}</span>
                 </div>
               </button>
             ))}
@@ -198,23 +217,25 @@ export default function Dashboard() {
         )}
       </div>
 
-      {/* Create room */}
-      <div className="mb-6 border border-gray-200 p-4 space-y-3">
-        <p className="text-sm font-medium">Create a room</p>
-        <p className="text-xs text-gray-400">Invite others via the room link. Start when ready.</p>
+      {/* Start a Vault */}
+      <div className="mb-6 border border-gray-200 rounded-lg p-4 space-y-3">
+        <p className="text-sm font-medium text-stone-900">Start a Vault</p>
+        <p className="text-xs text-gray-400">
+          Invite others via the room link. Begin when ready.
+        </p>
         <button
           onClick={createRoom}
           disabled={creatingRoom}
-          className="px-5 py-2 bg-black text-white text-sm font-medium disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-black"
+          className="px-5 py-2 bg-stone-900 text-white text-sm font-medium rounded disabled:opacity-50"
         >
-          {creatingRoom ? 'Creating…' : 'Create Room'}
+          {creatingRoom ? 'Creating…' : 'Start a Vault'}
         </button>
         {roomError && <p className="text-red-500 text-xs">{roomError}</p>}
       </div>
 
-      {/* Join by link */}
+      {/* Join a Vault */}
       <div className="space-y-2">
-        <p className="text-xs text-gray-500">Join via invite link:</p>
+        <p className="text-xs text-gray-500">Join a Vault:</p>
         <div className="flex gap-2">
           <input
             type="text"
@@ -222,12 +243,12 @@ export default function Dashboard() {
             value={joinId}
             onChange={e => setJoinId(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && goToRoom()}
-            className="border border-gray-300 px-3 py-2 text-sm flex-1 font-mono"
+            className="border border-gray-300 rounded px-3 py-2 text-sm flex-1 font-mono focus:outline-none focus:ring-2 focus:ring-stone-400"
           />
           <button
             onClick={goToRoom}
             disabled={!joinId.trim()}
-            className="px-4 py-2 bg-gray-800 text-white text-sm disabled:opacity-50"
+            className="px-4 py-2 bg-stone-700 text-white text-sm rounded font-medium disabled:opacity-40"
           >
             Go
           </button>

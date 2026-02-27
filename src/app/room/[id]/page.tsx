@@ -21,8 +21,14 @@ type RoomState = {
 };
 
 function getRoomLabel(members: RoomMember[], userId: string): string {
-  if (!members.length) return 'Room';
-  return members.map(m => (m.user_id === userId ? 'You' : m.display_name)).join(' · ');
+  if (!members.length) return 'Vault';
+  const others = members.filter(m => m.user_id !== userId).map(m => m.display_name);
+  return others.length === 0 ? 'Solo Vault' : `You · ${others.join(' · ')}`;
+}
+
+function getRoundLabel(gameDate: string): string {
+  const n = parseInt(gameDate, 10);
+  return isNaN(n) ? gameDate : `Round ${n}`;
 }
 
 export default function RoomPage() {
@@ -50,6 +56,9 @@ export default function RoomPage() {
   const [beginConfirm, setBeginConfirm] = useState(false);
   const [beginning, setBeginning] = useState(false);
 
+  const [deleteConfirm, setDeleteConfirm] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const revealFetchedForDate = useRef<string | null>(null);
 
@@ -58,7 +67,7 @@ export default function RoomPage() {
     if (!['reveal', 'final', 'complete'].includes(phase)) return;
     if (revealFetchedForDate.current === game_date) return;
 
-    revealFetchedForDate.current = game_date; // optimistic
+    revealFetchedForDate.current = game_date;
 
     const url = `/api/rooms/${id}/reveal${uid ? `?userId=${uid}` : ''}`;
     const res = await fetch(url);
@@ -66,7 +75,7 @@ export default function RoomPage() {
       const json = await res.json();
       setRevealData(json.revealData);
     } else {
-      revealFetchedForDate.current = null; // allow retry
+      revealFetchedForDate.current = null;
     }
   }, [id]);
 
@@ -75,7 +84,7 @@ export default function RoomPage() {
       const uid = localStorage.getItem('churro_user_id');
       const url = `/api/rooms/${id}${uid ? `?userId=${uid}` : ''}`;
       const res = await fetch(url);
-      if (!res.ok) { setPageError('Room not found'); return; }
+      if (!res.ok) { setPageError('Vault not found'); return; }
 
       const data: RoomState = await res.json();
       setRoomState(data);
@@ -83,7 +92,6 @@ export default function RoomPage() {
 
       if (data.knowledge) setPlayerKnowledge(data.knowledge);
 
-      // If game_date changed (new day/round), reset reveal + knowledge
       if (revealFetchedForDate.current && revealFetchedForDate.current !== data.room.game_date) {
         revealFetchedForDate.current = null;
         setRevealData(null);
@@ -92,7 +100,7 @@ export default function RoomPage() {
 
       await fetchReveal(uid, data.room);
     } catch {
-      setPageError('Failed to load room');
+      setPageError('Failed to load vault');
     } finally {
       setLoading(false);
     }
@@ -148,6 +156,26 @@ export default function RoomPage() {
     }
   }
 
+  async function deleteRoom() {
+    if (!userId || deleting) return;
+    setDeleting(true);
+    try {
+      const res = await fetch(`/api/rooms/${id}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error);
+      }
+      router.push('/');
+    } catch { } finally {
+      setDeleting(false);
+      setDeleteConfirm(false);
+    }
+  }
+
   async function startNextRound() {
     if (!userId || readying) return;
     setReadying(true);
@@ -188,11 +216,27 @@ export default function RoomPage() {
     }
   }
 
-  if (loading) return <div className="p-8 text-sm">Loading...</div>;
+  if (loading) return <div className="p-8 text-sm text-gray-500">Loading…</div>;
   if (pageError) return <div className="p-8 text-sm text-red-500">{pageError}</div>;
   if (!roomState) return null;
 
   const { room, members, guesses, result, answer } = roomState;
+
+  // Deleted vault — friendly interstitial
+  if (room.deleted_at) {
+    return (
+      <main className="min-h-screen flex flex-col items-center justify-center gap-4 p-8 text-center">
+        <p className="text-lg font-medium text-stone-800">This vault has been deleted.</p>
+        <button
+          onClick={() => router.push('/')}
+          className="px-5 py-2 bg-stone-900 text-white text-sm rounded font-medium"
+        >
+          Back to Dashboard
+        </button>
+      </main>
+    );
+  }
+
   const isInRoom = members.some(m => m.user_id === userId);
   const canJoin = !room.is_locked && members.length < room.max_players && room.phase === 'contribution';
 
@@ -208,30 +252,61 @@ export default function RoomPage() {
   const presentLetters = playerKnowledge?.presentLetters ?? revealData?.presentLetters ?? [];
   const eliminatedLetters = playerKnowledge?.eliminatedLetters ?? revealData?.eliminatedLetters ?? [];
 
+  const phaseLabel = !room.is_locked ? 'Lobby'
+    : room.phase === 'contribution' ? 'Add Your Word'
+    : room.phase === 'reveal' ? 'Reveal'
+    : room.phase === 'final' ? 'Crack the Vault'
+    : 'Complete';
+
   return (
     <main className="min-h-screen p-8 max-w-md mx-auto font-sans">
 
       {/* Begin game confirmation modal */}
       {beginConfirm && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white p-6 max-w-sm w-full">
+          <div className="bg-white p-6 max-w-sm w-full rounded-lg shadow-lg">
             <p className="font-medium mb-1">
-              Start game with {members.length} player{members.length !== 1 ? 's' : ''}?
+              Start vault with {members.length} player{members.length !== 1 ? 's' : ''}?
             </p>
             <p className="text-sm text-gray-500 mb-5">
-              Roster will be locked for this room.
+              Roster will be locked. No new players can join.
             </p>
             <div className="flex gap-3">
               <button
                 onClick={beginGame}
                 disabled={beginning}
-                className="px-5 py-2 bg-black text-white text-sm font-medium disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-black"
+                className="px-5 py-2 bg-stone-900 text-white text-sm font-medium rounded disabled:opacity-50"
               >
-                {beginning ? '…' : 'Start'}
+                {beginning ? '…' : 'Begin'}
               </button>
               <button
                 onClick={() => setBeginConfirm(false)}
-                className="px-5 py-2 border border-gray-300 text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-gray-400"
+                className="px-5 py-2 border border-gray-300 text-sm rounded"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete confirmation modal */}
+      {deleteConfirm && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white p-6 max-w-sm w-full rounded-lg shadow-lg">
+            <p className="font-medium mb-1">Delete this vault?</p>
+            <p className="text-sm text-gray-500 mb-5">This cannot be undone.</p>
+            <div className="flex gap-3">
+              <button
+                onClick={deleteRoom}
+                disabled={deleting}
+                className="px-5 py-2 bg-red-600 text-white text-sm font-medium rounded disabled:opacity-50"
+              >
+                {deleting ? '…' : 'Delete'}
+              </button>
+              <button
+                onClick={() => setDeleteConfirm(false)}
+                className="px-5 py-2 border border-gray-300 text-sm rounded"
               >
                 Cancel
               </button>
@@ -245,25 +320,40 @@ export default function RoomPage() {
         <div>
           <button
             onClick={() => router.push('/')}
-            className="text-xs text-gray-400 mb-1 hover:text-gray-600 focus-visible:ring-2 focus-visible:ring-offset-1 focus-visible:ring-gray-400"
+            className="text-xs text-gray-400 mb-1 hover:text-gray-600"
           >
             ← Dashboard
           </button>
-          <h1 className="text-xl font-bold">{getRoomLabel(members, userId ?? '')}</h1>
+          <h1 className="text-xl font-bold text-stone-900">{getRoomLabel(members, userId ?? '')}</h1>
         </div>
-        <div className="text-right text-xs text-gray-500 space-y-0.5">
-          <p className="capitalize">Phase: <strong>{room.is_locked ? room.phase : 'lobby'}</strong></p>
-          <p>Streak: <strong>{room.streak_count}</strong></p>
-          <p>{room.game_date}</p>
+        <div className="flex flex-col items-end gap-1">
+          <div className="text-right text-xs text-gray-500 space-y-0.5">
+            <p className="font-medium text-stone-700">{phaseLabel}</p>
+            <p>Streak: <strong>{room.streak_count}</strong></p>
+            {APP_MODE === 'round'
+              ? <p>{getRoundLabel(room.game_date)}</p>
+              : <p>{room.game_date}</p>
+            }
+          </div>
+          {isInRoom && (
+            <button
+              onClick={() => setDeleteConfirm(true)}
+              className="text-xs text-gray-300 hover:text-red-400 mt-1"
+            >
+              Delete vault
+            </button>
+          )}
         </div>
       </div>
 
       {/* Members */}
       <div className="mb-6">
-        <p className="text-xs font-medium text-gray-500 mb-1">PLAYERS ({members.length})</p>
+        <p className="text-xs font-medium text-gray-400 mb-1 uppercase tracking-wide">
+          Players ({members.length})
+        </p>
         <div className="flex flex-col gap-0.5">
           {members.map(m => (
-            <p key={m.user_id} className="text-sm">
+            <p key={m.user_id} className="text-sm text-stone-800">
               {m.display_name}{m.user_id === userId ? ' (you)' : ''}
             </p>
           ))}
@@ -275,11 +365,11 @@ export default function RoomPage() {
 
       {/* Not a member */}
       {!isInRoom && !userId && (
-        <div className="mb-6 border border-gray-200 p-4">
+        <div className="mb-6 border border-gray-200 rounded-lg p-4">
           <p className="text-sm text-gray-600 mb-2">Set a display name before joining.</p>
           <button
             onClick={() => router.push('/')}
-            className="px-4 py-2 bg-black text-white text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-black"
+            className="px-4 py-2 bg-stone-900 text-white text-sm rounded"
           >
             Go to Dashboard
           </button>
@@ -287,12 +377,12 @@ export default function RoomPage() {
       )}
 
       {!isInRoom && userId && canJoin && (
-        <div className="mb-6 border border-gray-200 p-4">
-          <p className="text-sm font-medium mb-3">Join this room</p>
+        <div className="mb-6 border border-gray-200 rounded-lg p-4">
+          <p className="text-sm font-medium mb-3">Join this vault</p>
           <button
             onClick={joinRoom}
             disabled={joining}
-            className="px-4 py-2 bg-black text-white text-sm disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-black"
+            className="px-4 py-2 bg-stone-900 text-white text-sm rounded disabled:opacity-50"
           >
             {joining ? '…' : 'Join'}
           </button>
@@ -301,7 +391,7 @@ export default function RoomPage() {
       )}
 
       {!isInRoom && userId && !canJoin && (
-        <p className="text-sm text-gray-400 mb-6">This room is no longer accepting players.</p>
+        <p className="text-sm text-gray-400 mb-6">This vault is no longer accepting players.</p>
       )}
 
       {/* Game UI */}
@@ -311,31 +401,33 @@ export default function RoomPage() {
           {room.phase === 'contribution' && (
             <div className="mb-6">
               {!room.is_locked ? (
-                /* ── LOBBY (pre-game) ── */
                 <div className="space-y-4">
-                  <p className="text-xs font-medium text-gray-500">LOBBY</p>
+                  <p className="text-xs font-medium text-gray-400 uppercase tracking-wide">Lobby</p>
                   <p className="text-sm text-gray-500">
-                    Share the invite link below. Click Begin when everyone is here.
+                    Share the invite link below. Begin when everyone is here.
                   </p>
                   <button
                     onClick={() => setBeginConfirm(true)}
-                    className="px-5 py-2 bg-black text-white text-sm font-medium focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-black"
+                    className="px-5 py-2 bg-stone-900 text-white text-sm font-medium rounded"
                   >
                     Begin Game
                   </button>
                 </div>
               ) : (
-                /* ── CONTRIBUTION (post-lock) ── */
                 <>
-                  <p className="text-xs font-medium text-gray-500 mb-1">PHASE 1 — CONTRIBUTION</p>
-                  <p className="text-sm text-gray-600 mb-4">{contributionCount} of {members.length} locked in</p>
+                  <p className="text-xs font-medium text-gray-400 mb-1 uppercase tracking-wide">
+                    Add Your Word
+                  </p>
+                  <p className="text-sm text-gray-500 mb-4">
+                    {contributionCount} of {members.length} locked in
+                  </p>
 
                   {myContribution ? (
-                    <p className="text-sm text-green-700">Your guess is locked in. Waiting for others…</p>
+                    <p className="text-sm text-emerald-700">Your word is locked in. Waiting for others…</p>
                   ) : (
                     <>
-                      <p className="text-xs text-gray-400 mb-3">
-                        Submit one {GAME_CONFIG.wordLength}-letter word. No feedback until all players submit.
+                      <p className="text-xs text-gray-400 mb-4">
+                        Submit one {GAME_CONFIG.wordLength}-letter word. No feedback until everyone submits.
                       </p>
                       <div className="mb-4">
                         <EntryRail
@@ -352,7 +444,7 @@ export default function RoomPage() {
                       <button
                         onClick={submitGuess}
                         disabled={submitting || !inputIsValid}
-                        className="px-4 py-2 bg-black text-white text-sm disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-black"
+                        className="px-4 py-2 bg-stone-900 text-white text-sm rounded disabled:opacity-50"
                       >
                         {submitting ? '…' : 'Lock In'}
                       </button>
@@ -367,17 +459,17 @@ export default function RoomPage() {
           {/* ── REVEAL (transitional) ── */}
           {room.phase === 'reveal' && (
             <div className="mb-6">
-              <p className="text-xs font-medium text-gray-500 mb-1">PHASE 2 — REVEAL</p>
-              <p className="text-sm text-gray-400">Computing reveal…</p>
+              <p className="text-xs font-medium text-gray-400 mb-1 uppercase tracking-wide">Reveal</p>
+              <p className="text-sm text-gray-400">Processing contributions…</p>
             </div>
           )}
 
           {/* ── FINAL ── */}
           {room.phase === 'final' && revealData && (
             <div className="mb-6 space-y-6">
-              <p className="text-xs font-medium text-gray-500">PHASE 3 — FINAL SOLVE</p>
-
-              <PositionDisplay knownPositions={knownPositions} />
+              <p className="text-xs font-medium text-gray-400 uppercase tracking-wide">
+                Crack the Vault
+              </p>
 
               <div>
                 <p className="text-xs text-gray-400 mb-2 uppercase tracking-wide">Letter bank</p>
@@ -390,52 +482,55 @@ export default function RoomPage() {
                   {myFinalGuesses.map(g => (
                     <p key={g.id} className="font-mono text-sm">
                       {g.guess}{' '}
-                      <span className={g.is_correct ? 'text-green-600' : 'text-red-500'}>
-                        {g.is_correct ? '✓ correct' : '✗ wrong'}
+                      <span className={g.is_correct ? 'text-emerald-600' : 'text-red-400'}>
+                        {g.is_correct ? '✓' : '✗'}
                       </span>
                     </p>
                   ))}
                 </div>
               )}
 
-              <div>
-                {lastCorrect === false && (
-                  <p className="text-sm text-red-500 mb-2">Not correct. Try again.</p>
-                )}
-                {correctFinalGuess ? (
-                  <p className="text-sm text-green-700">You solved it. Waiting for others…</p>
-                ) : remainingFinal > 0 ? (
-                  <>
-                    <p className="text-xs text-gray-400 mb-3">
-                      {remainingFinal} guess{remainingFinal !== 1 ? 'es' : ''} remaining
-                    </p>
-                    <div className="mb-4">
-                      <EntryRail
-                        key={`final-${room.game_date}-${myFinalGuesses.length}`}
-                        knownPositions={knownPositions}
-                        onValueChange={(val, complete) => {
-                          setRailValue(val);
-                          setInputIsValid(complete);
-                        }}
-                        onSubmit={submitGuess}
-                        disabled={submitting}
-                      />
-                    </div>
-                    <button
-                      onClick={submitGuess}
-                      disabled={submitting || !inputIsValid}
-                      className="px-4 py-2 bg-black text-white text-sm disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-black"
-                    >
-                      {submitting ? '…' : 'Solve'}
-                    </button>
-                    {submitError && <p className="text-red-500 text-xs mt-2">{submitError}</p>}
-                  </>
-                ) : (
-                  <p className="text-sm text-gray-500">
-                    You&apos;ve used all your guesses. Waiting for others…
+              {/* ONE input rail — PositionDisplay only shown when no rail is active */}
+              {correctFinalGuess ? (
+                <>
+                  <PositionDisplay knownPositions={knownPositions} />
+                  <p className="text-sm text-emerald-700">You cracked it. Waiting for others…</p>
+                </>
+              ) : remainingFinal > 0 ? (
+                <>
+                  {lastCorrect === false && (
+                    <p className="text-sm text-red-500">Not quite. Try again.</p>
+                  )}
+                  <p className="text-xs text-gray-400">
+                    {remainingFinal} guess{remainingFinal !== 1 ? 'es' : ''} remaining
                   </p>
-                )}
-              </div>
+                  <div>
+                    <EntryRail
+                      key={`final-${room.game_date}-${myFinalGuesses.length}`}
+                      knownPositions={knownPositions}
+                      onValueChange={(val, complete) => {
+                        setRailValue(val);
+                        setInputIsValid(complete);
+                      }}
+                      onSubmit={submitGuess}
+                      disabled={submitting}
+                    />
+                  </div>
+                  <button
+                    onClick={submitGuess}
+                    disabled={submitting || !inputIsValid}
+                    className="px-4 py-2 bg-stone-900 text-white text-sm rounded disabled:opacity-50"
+                  >
+                    {submitting ? '…' : 'Submit'}
+                  </button>
+                  {submitError && <p className="text-red-500 text-xs mt-1">{submitError}</p>}
+                </>
+              ) : (
+                <>
+                  <PositionDisplay knownPositions={knownPositions} />
+                  <p className="text-sm text-gray-500">No guesses remaining. Waiting for others…</p>
+                </>
+              )}
             </div>
           )}
 
@@ -443,31 +538,35 @@ export default function RoomPage() {
           {room.phase === 'complete' && (
             <div className="mb-6 space-y-6">
 
-              {/* Vault result */}
-              <div className="border border-gray-200 p-4 space-y-2">
+              <div className="border border-gray-200 rounded-lg p-4 space-y-2">
                 {result?.winner_user_id ? (
                   <>
-                    <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Vault Opened</p>
-                    <p className="font-mono text-2xl tracking-widest font-bold">{answer ?? '???????'}</p>
-                    <p className="text-sm text-green-700">
+                    <p className="text-xs font-medium text-gray-400 uppercase tracking-wide">Vault Opened</p>
+                    <p className="font-mono text-2xl tracking-widest font-bold text-stone-900">
+                      {answer ?? '???????'}
+                    </p>
+                    <p className="text-sm text-emerald-700">
                       {result.winner_user_id === userId
-                        ? 'You solved it!'
-                        : `${members.find(m => m.user_id === result.winner_user_id)?.display_name ?? 'Someone'} solved it.`}
+                        ? 'You cracked it!'
+                        : `${members.find(m => m.user_id === result.winner_user_id)?.display_name ?? 'Someone'} cracked it.`}
                     </p>
                     {result.all_participated && (
-                      <p className="text-xs text-gray-400">All participated — streak is now {room.streak_count}.</p>
+                      <p className="text-xs text-gray-400">
+                        All participated — streak: {room.streak_count}
+                      </p>
                     )}
                   </>
                 ) : (
                   <>
-                    <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Vault Remained Locked</p>
-                    <p className="font-mono text-2xl tracking-widest font-bold text-gray-400">{answer ?? '???????'}</p>
-                    <p className="text-sm text-red-600">Nobody solved it. Streak reset.</p>
+                    <p className="text-xs font-medium text-gray-400 uppercase tracking-wide">Vault Locked</p>
+                    <p className="font-mono text-2xl tracking-widest font-bold text-gray-400">
+                      {answer ?? '???????'}
+                    </p>
+                    <p className="text-sm text-red-500">Nobody cracked it. Streak reset.</p>
                   </>
                 )}
               </div>
 
-              {/* Badges */}
               {(() => {
                 const allFinal = guesses.filter(g => g.phase === 'final');
                 const allContrib = guesses.filter(g => g.phase === 'contribution');
@@ -531,14 +630,13 @@ export default function RoomPage() {
                 );
               })()}
 
-              {/* Participation stats */}
               <div className="text-xs text-gray-400 space-y-0.5">
-                <p>{guesses.filter(g => g.phase === 'contribution').length}/{members.length} contributed</p>
-                <p>{new Set(guesses.filter(g => g.phase === 'final').map(g => g.user_id)).size}/{members.length} attempted final solve</p>
+                <p>{guesses.filter(g => g.phase === 'contribution').length} of {members.length} contributed</p>
+                <p>{new Set(guesses.filter(g => g.phase === 'final').map(g => g.user_id)).size} of {members.length} attempted final solve</p>
               </div>
 
               {APP_MODE === 'round' ? (
-                <div className="border border-gray-200 p-4">
+                <div className="border border-gray-200 rounded-lg p-4">
                   <p className="text-xs text-gray-500 mb-3">
                     {members.filter(m => m.ready_for_next).length} of {members.length} ready for next word
                   </p>
@@ -548,9 +646,9 @@ export default function RoomPage() {
                     <button
                       onClick={startNextRound}
                       disabled={readying}
-                      className="px-5 py-2 bg-black text-white text-sm font-medium disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-black"
+                      className="px-5 py-2 bg-stone-900 text-white text-sm font-medium rounded disabled:opacity-50"
                     >
-                      {readying ? '…' : 'Start Next Word'}
+                      {readying ? '…' : 'Next Word'}
                     </button>
                   )}
                 </div>
@@ -562,9 +660,9 @@ export default function RoomPage() {
         </>
       )}
 
-      {/* Invite link — only while room is in lobby */}
+      {/* Invite link — lobby only */}
       {room.phase === 'contribution' && !room.is_locked && (
-        <div className="mt-8 p-3 bg-gray-50 text-xs text-gray-500">
+        <div className="mt-8 p-3 bg-stone-50 rounded-lg text-xs text-gray-500">
           <p className="font-medium mb-1">Invite link:</p>
           <p className="font-mono break-all select-all">
             {typeof window !== 'undefined' ? window.location.href : ''}

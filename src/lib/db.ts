@@ -66,6 +66,15 @@ export async function advanceRoomPhase(
     .eq('phase', fromPhase);
 }
 
+// Soft-delete a room. Requires: ALTER TABLE rooms ADD COLUMN deleted_at timestamptz;
+export async function softDeleteRoom(roomId: string): Promise<void> {
+  const { error } = await supabase
+    .from('rooms')
+    .update({ deleted_at: new Date().toISOString() })
+    .eq('id', roomId);
+  if (error) throw new Error(error.message);
+}
+
 // Lock a room when it reaches max_players capacity
 export async function lockRoom(roomId: string): Promise<void> {
   await supabase
@@ -163,9 +172,9 @@ export async function setRevealViewedAt(userId: string, roomId: string): Promise
     .is('reveal_viewed_at', null);
 }
 
-// Returns all rooms a user belongs to, with full room data + member list
+// Returns all non-deleted rooms a user belongs to, with room data + members + current result.
 export async function getRoomsByUserId(userId: string): Promise<
-  { room: Room; members: RoomMember[] }[]
+  { room: Room; members: RoomMember[]; result: { winner_user_id: string | null } | null }[]
 > {
   // 1. Get room IDs for this user
   const { data: memberships, error: mErr } = await supabase
@@ -178,18 +187,25 @@ export async function getRoomsByUserId(userId: string): Promise<
 
   const roomIds = memberships.map(m => m.room_id as string);
 
-  // 2. Fetch rooms + all members in parallel
-  const [{ data: rooms }, { data: allMembers }] = await Promise.all([
-    supabase.from('rooms').select('*').in('id', roomIds),
+  // 2. Fetch rooms (excluding deleted) + all members + results in parallel
+  const [{ data: rooms }, { data: allMembers }, { data: allResults }] = await Promise.all([
+    supabase.from('rooms').select('*').in('id', roomIds).is('deleted_at', null),
     supabase.from('room_members').select('*').in('room_id', roomIds).order('joined_at', { ascending: true }),
+    supabase.from('results').select('room_id, game_date, winner_user_id').in('room_id', roomIds),
   ]);
 
   if (!rooms) return [];
 
-  return rooms.map(room => ({
-    room: room as Room,
-    members: ((allMembers ?? []) as RoomMember[]).filter(m => m.room_id === room.id),
-  }));
+  return rooms.map(room => {
+    const result = (allResults ?? []).find(
+      r => r.room_id === room.id && r.game_date === (room as Room).game_date
+    ) ?? null;
+    return {
+      room: room as Room,
+      members: ((allMembers ?? []) as RoomMember[]).filter(m => m.room_id === room.id),
+      result: result ? { winner_user_id: result.winner_user_id } : null,
+    };
+  });
 }
 
 // ── Guesses ───────────────────────────────────────────────────────────────────

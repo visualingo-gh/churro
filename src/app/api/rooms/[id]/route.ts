@@ -5,6 +5,7 @@ import {
   getGuessesByRoom,
   getResult,
   resetRoomForNewDay,
+  softDeleteRoom,
 } from '@/lib/db';
 import { getGameWord, computeRevealData, derivePlayerKnowledge } from '@/lib/game-engine';
 import { getAppMode, getTodayStringLA } from '@/lib/app-mode';
@@ -19,6 +20,13 @@ export async function GET(
   let room = await getRoomById(id);
   if (!room) {
     return NextResponse.json({ error: 'Room not found' }, { status: 404 });
+  }
+
+  // Deleted room — return minimal payload so client can show the deleted state
+  if (room.deleted_at) {
+    return NextResponse.json({
+      room, members: [], guesses: [], result: null, answer: null, knowledge: null,
+    });
   }
 
   // Lazy daily reset (daily mode only): new calendar day → new game
@@ -54,4 +62,39 @@ export async function GET(
   }
 
   return NextResponse.json({ room, members, guesses, result, answer, knowledge });
+}
+
+export async function DELETE(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const { id } = await params;
+  const body = await req.json().catch(() => ({}));
+  const { userId } = body ?? {};
+
+  if (!userId) {
+    return NextResponse.json({ error: 'userId is required' }, { status: 400 });
+  }
+
+  const room = await getRoomById(id);
+  if (!room) {
+    return NextResponse.json({ error: 'Room not found' }, { status: 404 });
+  }
+
+  if (room.deleted_at) {
+    return NextResponse.json({ success: true }); // already deleted
+  }
+
+  const members = await getMembersByRoom(id);
+  if (!members.find(m => m.user_id === userId)) {
+    return NextResponse.json({ error: 'Not a member of this room' }, { status: 403 });
+  }
+
+  try {
+    await softDeleteRoom(id);
+  } catch (e) {
+    return NextResponse.json({ error: (e as Error).message }, { status: 500 });
+  }
+
+  return NextResponse.json({ success: true });
 }

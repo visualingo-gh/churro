@@ -16,6 +16,7 @@ export interface Room {
   streak_count: number;
   game_date: string; // round mode: "1","2",… | daily mode: "YYYY-MM-DD" (LA tz)
   created_at: string;
+  deleted_at: string | null;
 }
 
 export interface RoomMember {
