@@ -22,10 +22,10 @@ function getStatusLine(
 ): string {
   if (!room.is_locked) return 'Lobby · invite others to join';
   switch (room.phase) {
-    case 'contribution': return 'Adding words…';
-    case 'reveal':       return 'Processing reveal…';
+    case 'contribution': return 'Add Your Word';
+    case 'reveal':       return 'Revealing…';
     case 'final':        return 'Crack the Vault';
-    case 'complete':     return result?.winner_user_id ? 'Vault Opened 🔓' : 'Vault Locked 🔒';
+    case 'complete':     return result?.winner_user_id ? 'Vault Opened' : 'Vault Locked';
     case 'expired':      return 'Vault expired';
     default:             return room.phase;
   }

@@ -25,9 +25,8 @@ export function PositionDisplay({ knownPositions }: Props) {
               {letter || '_'}
             </span>
             <div
-              className={`w-8 h-0.5 ${isFilled ? 'bg-gray-800' : 'bg-gray-300'}`}
+              className={`w-8 h-0.5 ${isFilled ? 'bg-gray-800' : 'bg-gray-400'}`}
             />
-            <span className="text-xs text-gray-400">{i + 1}</span>
           </div>
         );
       })}

@@ -340,14 +340,6 @@ export default function RoomPage() {
               : <p>{room.game_date}</p>
             }
           </div>
-          {isInRoom && (
-            <button
-              onClick={() => setDeleteConfirm(true)}
-              className="text-xs text-gray-300 hover:text-red-400 mt-1"
-            >
-              Delete vault
-            </button>
-          )}
         </div>
       </div>
 
@@ -486,17 +478,26 @@ export default function RoomPage() {
                 <LetterBank presentLetters={presentLetters} eliminatedLetters={eliminatedLetters} />
               </div>
 
-              {myFinalGuesses.length > 0 && (
-                <div className="space-y-1">
+              {(myContribution || myFinalGuesses.length > 0) && (
+                <div className="space-y-1.5">
                   <p className="text-xs text-gray-400 uppercase tracking-wide">Your guesses</p>
-                  {myFinalGuesses.map(g => (
-                    <p key={g.id} className="font-mono text-sm">
-                      {g.guess}{' '}
-                      <span className={g.is_correct ? 'text-emerald-600' : 'text-red-400'}>
-                        {g.is_correct ? '✓' : '✗'}
-                      </span>
+                  {myContribution && (
+                    <p className="font-mono text-xs text-gray-400">
+                      {myContribution.guess}
+                      <span className="ml-2 not-mono text-gray-300">contribution</span>
                     </p>
-                  ))}
+                  )}
+                  {myFinalGuesses.map((g, idx) => {
+                    const isLatest = idx === myFinalGuesses.length - 1;
+                    return (
+                      <p key={g.id} className={`font-mono text-sm ${isLatest ? 'font-semibold text-stone-800' : 'text-stone-500'}`}>
+                        {g.guess}{' '}
+                        <span className={g.is_correct ? 'text-emerald-600' : 'text-stone-400'}>
+                          {g.is_correct ? '✓' : '·'}
+                        </span>
+                      </p>
+                    );
+                  })}
                 </div>
               )}
 
@@ -509,7 +510,7 @@ export default function RoomPage() {
               ) : remainingFinal > 0 ? (
                 <>
                   {lastCorrect === false && (
-                    <p className="text-sm text-red-500">Not quite. Try again.</p>
+                    <p className="text-sm text-amber-700">Not quite. Keep going.</p>
                   )}
                   <p className="text-xs text-gray-400">
                     {remainingFinal} guess{remainingFinal !== 1 ? 'es' : ''} remaining
@@ -533,7 +534,7 @@ export default function RoomPage() {
                   >
                     {submitting ? '…' : 'Submit'}
                   </button>
-                  {submitError && <p className="text-red-500 text-xs mt-1">{submitError}</p>}
+                  {submitError && <p className="text-amber-700 text-xs mt-1">{submitError}</p>}
                 </>
               ) : (
                 <>
@@ -700,6 +701,18 @@ export default function RoomPage() {
           <p className="font-mono break-all select-all">
             {typeof window !== 'undefined' ? window.location.href : ''}
           </p>
+        </div>
+      )}
+
+      {/* Delete vault — bottom of page, subtle */}
+      {isInRoom && !room.deleted_at && (
+        <div className="mt-16 pt-4 border-t border-gray-100 text-center">
+          <button
+            onClick={() => setDeleteConfirm(true)}
+            className="text-xs text-gray-300 hover:text-red-400"
+          >
+            Delete vault
+          </button>
         </div>
       )}
     </main>

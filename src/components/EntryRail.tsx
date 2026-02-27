@@ -195,10 +195,9 @@ export function EntryRail({ knownPositions, onValueChange, onSubmit, disabled }:
                   ? 'bg-stone-700'   // locked: dark warm underline
                   : letter
                   ? 'bg-stone-500'   // typed: medium underline
-                  : 'bg-gray-400'    // empty: visible but not heavy
+                  : 'bg-gray-500'    // empty: slightly stronger contrast
               }`}
             />
-            <span className="text-xs text-gray-400">{i + 1}</span>
           </div>
         );
       })}
