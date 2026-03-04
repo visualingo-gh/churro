@@ -182,13 +182,18 @@ export default function RoomPage() {
   async function startNextRound() {
     if (!userId || readying) return;
     setReadying(true);
-    setHasClickedReady(true);
     try {
-      await fetch(`/api/rooms/${id}/ready`, {
+      const res = await fetch(`/api/rooms/${id}/ready`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId }),
       });
+      if (res.ok) {
+        const data = await res.json();
+        // Only set optimistic ready state when waiting for others.
+        // If advanced === true, fetchRoomState will show the new phase.
+        if (!data.advanced) setHasClickedReady(true);
+      }
       await fetchRoomState();
     } catch { } finally {
       setReadying(false);

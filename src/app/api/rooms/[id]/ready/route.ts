@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getRoomById, getMembersByRoom, setMemberReady, advanceToNextRound, touchMemberActivity } from '@/lib/db';
+import { getRoomById, getMembersByRoom, setMemberReady, resetMemberReady, advanceToNextRound, touchMemberActivity } from '@/lib/db';
 import { getAppMode } from '@/lib/app-mode';
 
 export async function POST(
@@ -46,6 +46,8 @@ export async function POST(
     try {
       await advanceToNextRound(id, room.game_date);
     } catch (e) {
+      // Reset the member's ready flag so they can retry rather than getting stuck.
+      await resetMemberReady(userId, id);
       return NextResponse.json({ error: (e as Error).message }, { status: 500 });
     }
     return NextResponse.json({ advanced: true });

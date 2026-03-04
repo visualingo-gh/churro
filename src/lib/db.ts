@@ -151,6 +151,15 @@ export async function setMemberReady(userId: string, roomId: string): Promise<vo
     .eq('room_id', roomId);
 }
 
+// Round mode: clear a member's ready flag (called on advance failure so they can retry).
+export async function resetMemberReady(userId: string, roomId: string): Promise<void> {
+  await supabase
+    .from('room_members')
+    .update({ ready_for_next: false })
+    .eq('user_id', userId)
+    .eq('room_id', roomId);
+}
+
 // Round mode: advance to next round — increments game_date ("1" → "2"), resets phase.
 // Idempotent: guarded by current game_date + phase so concurrent requests are no-ops.
 export async function advanceToNextRound(roomId: string, currentGameDate: string): Promise<void> {
